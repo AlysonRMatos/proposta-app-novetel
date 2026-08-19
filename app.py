@@ -59,6 +59,16 @@ if not os.path.exists(TEMPLATE_PATH):
     )
     st.stop()
 
+status = db.status_backend()
+if status["postgres"]:
+    st.caption(f"Banco de dados: Postgres ({status['origem']}) — persistente")
+else:
+    st.error(
+        "ATENCAO: o app nao encontrou DATABASE_URL configurada e esta usando um banco "
+        "SQLite local temporario. Os dados vao se perder quando o app reiniciar/dormir. "
+        "Configure DATABASE_URL em Settings -> Secrets no Streamlit Cloud."
+    )
+
 st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero():04d}**")
 
 with st.expander("Historico de propostas geradas"):

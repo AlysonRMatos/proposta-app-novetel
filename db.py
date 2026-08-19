@@ -16,22 +16,39 @@ from counter import montar_codigo
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _engine = None
+_origem_url = None  # "secrets", "env" ou "sqlite_local" -- para diagnostico
 
 
 def _obter_database_url() -> str:
+    global _origem_url
+
     try:
         if "DATABASE_URL" in st.secrets:
-            return st.secrets["DATABASE_URL"]
+            valor = st.secrets["DATABASE_URL"]
+            if valor and valor.strip():
+                _origem_url = "secrets"
+                return valor
     except Exception:
         pass
 
     url = os.environ.get("DATABASE_URL")
-    if url:
+    if url and url.strip():
+        _origem_url = "env"
         return url
 
+    _origem_url = "sqlite_local"
     db_path = os.path.join(BASE_DIR, "data", "propostas.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     return f"sqlite:///{db_path}"
+
+
+def status_backend() -> dict:
+    """Diagnostico: qual banco esta realmente sendo usado."""
+    _get_engine()  # garante que _origem_url foi resolvido
+    return {
+        "origem": _origem_url,
+        "postgres": _origem_url in ("secrets", "env"),
+    }
 
 
 def _adicionar_coluna_se_necessario(engine, coluna: str, tipo: str):
