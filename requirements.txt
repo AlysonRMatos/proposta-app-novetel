@@ -1,0 +1,9 @@
+streamlit
+python-docx
+docxtpl
+docxcompose
+openpyxl
+pandas
+num2words
+sqlalchemy
+psycopg2-binary

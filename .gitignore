@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+data/*.db
+data/*.json
+output/*.docx
+output/*.pdf
