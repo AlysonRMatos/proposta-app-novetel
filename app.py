@@ -10,6 +10,7 @@ from itens_tabela import montar_tabela_itens
 from valor_extenso import formatar_moeda_brl, valor_por_extenso, valor_completo
 from clientes import obter_abreviacao
 from imagens_grid import montar_grid_imagens
+from counter import montar_codigo
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +80,33 @@ with st.expander("Historico de propostas geradas"):
             ],
             use_container_width=True,
         )
+        st.divider()
+        st.write("**Baixar arquivos de uma proposta anterior**")
+        opcoes = {f"{h.codigo} - {h.cliente}": h.numero for h in historico}
+        escolha = st.selectbox("Proposta", list(opcoes.keys()))
+        if escolha:
+            numero_sel = opcoes[escolha]
+            col_a, col_b = st.columns(2)
+            lpu_arq = db.obter_lpu(numero_sel)
+            prop_arq = db.obter_proposta_docx(numero_sel)
+            if lpu_arq:
+                col_a.download_button(
+                    "Baixar LPU original",
+                    data=lpu_arq[1],
+                    file_name=lpu_arq[0],
+                    key=f"lpu_{numero_sel}",
+                )
+            else:
+                col_a.caption("LPU nao disponivel para essa proposta.")
+            if prop_arq:
+                col_b.download_button(
+                    "Baixar proposta gerada",
+                    data=prop_arq[1],
+                    file_name=prop_arq[0],
+                    key=f"prop_{numero_sel}",
+                )
+            else:
+                col_b.caption("Proposta nao disponivel.")
     else:
         st.caption("Nenhuma proposta gerada ainda.")
 
@@ -87,9 +115,11 @@ st.header("1. Planilha LPU")
 lpu_file = st.file_uploader("Selecione a planilha LPU (.xlsx)", type=["xlsx"])
 
 dados_lpu = None
+lpu_bytes = None
 if lpu_file is not None:
+    lpu_bytes = lpu_file.getvalue()
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        tmp.write(lpu_file.getbuffer())
+        tmp.write(lpu_bytes)
         tmp_path = tmp.name
     dados_lpu = carregar_lpu(tmp_path, lpu_file.name)
     os.unlink(tmp_path)
@@ -203,14 +233,8 @@ if gerar:
         st.error("Preencha a abreviação do cliente.")
         st.stop()
 
-    numero_proposta, codigo_proposta = db.registrar_proposta(
-        abreviacao_cliente=abreviacao_cliente,
-        cliente=cliente,
-        data_proposta=data_proposta,
-        codigo_projeto=dados_lpu["codigo_projeto"],
-        local=dados_lpu["local"],
-        valor_total=dados_lpu["valor_total_bdi"],
-    )
+    numero_proposta = db.proximo_numero_atomic()
+    codigo_proposta = montar_codigo(abreviacao_cliente, numero_proposta, data_proposta)
 
     tpl = DocxTemplate(TEMPLATE_PATH)
 
@@ -253,12 +277,27 @@ if gerar:
     nome_saida = f"{codigo_proposta}_{dados_lpu['codigo_projeto']}_{cliente}.docx".replace(" ", "_")
     caminho_saida = os.path.join(OUTPUT_DIR, nome_saida)
     tpl.save(caminho_saida)
+    with open(caminho_saida, "rb") as f:
+        proposta_bytes = f.read()
+
+    db.salvar_proposta(
+        numero=numero_proposta,
+        abreviacao_cliente=abreviacao_cliente,
+        cliente=cliente,
+        data_proposta=data_proposta,
+        codigo_projeto=dados_lpu["codigo_projeto"],
+        local=dados_lpu["local"],
+        valor_total=dados_lpu["valor_total_bdi"],
+        lpu_nome_arquivo=lpu_file.name,
+        lpu_arquivo=lpu_bytes,
+        proposta_nome_arquivo=nome_saida,
+        proposta_arquivo=proposta_bytes,
+    )
 
     st.success(f"Proposta gerada: {codigo_proposta}")
-    with open(caminho_saida, "rb") as f:
-        st.download_button(
-            "Baixar proposta (.docx)",
-            data=f.read(),
-            file_name=nome_saida,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+    st.download_button(
+        "Baixar proposta (.docx)",
+        data=proposta_bytes,
+        file_name=nome_saida,
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )

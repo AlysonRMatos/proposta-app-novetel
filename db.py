@@ -1,7 +1,7 @@
 """
-Banco de dados de propostas: guarda o historico e controla o numero
-sequencial global de forma atomica (seguro para multiplos usuarios
-simultaneos).
+Banco de dados de propostas: guarda o historico (incluindo os arquivos da
+LPU enviada e da proposta .docx gerada) e controla o numero sequencial
+global de forma atomica (seguro para multiplos usuarios simultaneos).
 
 Usa Postgres quando DATABASE_URL esta configurada (producao/online) e
 cai para um arquivo SQLite local quando nao esta (desenvolvimento).
@@ -32,6 +32,14 @@ def _obter_database_url() -> str:
     db_path = os.path.join(BASE_DIR, "data", "propostas.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     return f"sqlite:///{db_path}"
+
+
+def _adicionar_coluna_se_necessario(engine, coluna: str, tipo: str):
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE propostas ADD COLUMN {coluna} {tipo}"))
+    except Exception:
+        pass  # coluna ja existe
 
 
 def _criar_tabelas(engine):
@@ -70,6 +78,14 @@ def _criar_tabelas(engine):
             )
         )
 
+    for coluna, tipo in [
+        ("lpu_nome_arquivo", "TEXT"),
+        ("lpu_arquivo", "BYTEA"),
+        ("proposta_nome_arquivo", "TEXT"),
+        ("proposta_arquivo", "BYTEA"),
+    ]:
+        _adicionar_coluna_se_necessario(engine, coluna, tipo)
+
 
 def _get_engine():
     global _engine
@@ -86,32 +102,45 @@ def espiar_proximo_numero() -> int:
         return (valor or 0) + 1
 
 
-def registrar_proposta(
+def proximo_numero_atomic() -> int:
+    """Incrementa e retorna o numero sequencial global de forma atomica."""
+    engine = _get_engine()
+    with engine.begin() as conn:
+        numero = conn.execute(
+            text("UPDATE contador SET valor = valor + 1 WHERE id = 1 RETURNING valor")
+        ).scalar()
+        return numero
+
+
+def salvar_proposta(
+    numero: int,
     abreviacao_cliente: str,
     cliente: str,
     data_proposta,
     codigo_projeto: str,
     local: str,
     valor_total: float,
-) -> tuple[int, str]:
-    """Incrementa o contador global e grava a proposta em uma unica
-    transacao atomica (segura mesmo com varios usuarios gerando ao
-    mesmo tempo)."""
+    lpu_nome_arquivo: str = None,
+    lpu_arquivo: bytes = None,
+    proposta_nome_arquivo: str = None,
+    proposta_arquivo: bytes = None,
+) -> str:
+    """Grava o registro completo da proposta (numero ja reservado
+    previamente com proximo_numero_atomic), incluindo os arquivos."""
+    codigo = montar_codigo(abreviacao_cliente, numero, data_proposta)
     engine = _get_engine()
     with engine.begin() as conn:
-        numero = conn.execute(
-            text("UPDATE contador SET valor = valor + 1 WHERE id = 1 RETURNING valor")
-        ).scalar()
-        codigo = montar_codigo(abreviacao_cliente, numero, data_proposta)
         conn.execute(
             text(
                 """
                 INSERT INTO propostas (
                     numero, codigo, cliente, abreviacao_cliente,
-                    codigo_projeto, local, data_proposta, valor_total, criado_em
+                    codigo_projeto, local, data_proposta, valor_total, criado_em,
+                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo
                 ) VALUES (
                     :numero, :codigo, :cliente, :abrev,
-                    :codigo_projeto, :local, :data_proposta, :valor_total, :criado_em
+                    :codigo_projeto, :local, :data_proposta, :valor_total, :criado_em,
+                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq
                 )
                 """
             ),
@@ -125,9 +154,13 @@ def registrar_proposta(
                 "data_proposta": data_proposta.strftime("%Y-%m-%d"),
                 "valor_total": valor_total,
                 "criado_em": datetime.now(timezone.utc).isoformat(),
+                "lpu_nome": lpu_nome_arquivo,
+                "lpu_arq": lpu_arquivo,
+                "prop_nome": proposta_nome_arquivo,
+                "prop_arq": proposta_arquivo,
             },
         )
-    return numero, codigo
+    return codigo
 
 
 def listar_propostas(limite: int = 100):
@@ -146,6 +179,32 @@ def listar_propostas(limite: int = 100):
             {"lim": limite},
         ).fetchall()
         return rows
+
+
+def obter_lpu(numero: int):
+    """Retorna (nome_arquivo, bytes) da LPU enviada nessa proposta, ou None."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT lpu_nome_arquivo, lpu_arquivo FROM propostas WHERE numero = :n"),
+            {"n": numero},
+        ).fetchone()
+        if row and row[1] is not None:
+            return row[0], bytes(row[1])
+        return None
+
+
+def obter_proposta_docx(numero: int):
+    """Retorna (nome_arquivo, bytes) do .docx gerado nessa proposta, ou None."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT proposta_nome_arquivo, proposta_arquivo FROM propostas WHERE numero = :n"),
+            {"n": numero},
+        ).fetchone()
+        if row and row[1] is not None:
+            return row[0], bytes(row[1])
+        return None
 
 
 def resetar_banco():
