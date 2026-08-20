@@ -257,11 +257,19 @@ else:
 # ---------- 2. Dados da proposta ----------
 st.header("2. Dados da proposta")
 col1, col2 = st.columns(2)
+def _atualizar_abreviacao_sugerida():
+    st.session_state["abreviacao_cliente"] = obter_abreviacao(st.session_state.get("cliente", ""))
+
+
 with col1:
-    cliente = st.text_input("Cliente", placeholder="Ex: Shopee", key="cliente")
+    cliente = st.text_input(
+        "Cliente",
+        placeholder="Ex: Shopee",
+        key="cliente",
+        on_change=_atualizar_abreviacao_sugerida,
+    )
     abreviacao_cliente = st.text_input(
         "Abreviação do cliente (usada no código da proposta)",
-        value=obter_abreviacao(cliente),
         placeholder="Ex: SHO",
         max_chars=10,
         key="abreviacao_cliente",
