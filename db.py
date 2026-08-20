@@ -245,7 +245,19 @@ def obter_proposta_pdf(numero: int):
         return None
 
 
-def resetar_banco():
+def resetar_banco(confirmar: bool = False):
+    """Apaga todas as propostas e zera o contador.
+
+    Trava de seguranca: se o banco em uso for o Postgres de producao,
+    exige confirmar=True explicitamente. Evita zerar dados reais por
+    engano durante testes/scripts."""
+    status = status_backend()
+    if status["postgres"] and not confirmar:
+        raise RuntimeError(
+            "Recusado: isso apagaria o banco de PRODUCAO (Postgres). "
+            "Se e realmente isso que voce quer, chame resetar_banco(confirmar=True)."
+        )
+
     engine = _get_engine()
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM propostas"))
