@@ -51,6 +51,22 @@ def remove_paragraph(paragraph):
     p.getparent().remove(p)
 
 
+def mover_bookmark_start(paragraph_origem, paragraph_destino, bookmark_id):
+    """Move o <w:bookmarkStart> de id=bookmark_id do inicio de paragraph_origem
+    para o inicio de paragraph_destino. Necessario quando o paragrafo de
+    origem sera removido/substituido, mas o <w:bookmarkEnd> correspondente
+    (em outro paragrafo, referenciado por um PAGEREF no indice) precisa
+    continuar tendo um bookmarkStart valido em algum lugar antes dele."""
+    p_origem = paragraph_origem._p
+    p_destino = paragraph_destino._p
+    for el in p_origem.findall(qn("w:bookmarkStart")):
+        if el.get(qn("w:id")) == str(bookmark_id):
+            p_origem.remove(el)
+            p_destino.insert(0, el)
+            return True
+    return False
+
+
 def main():
     if not os.path.exists(ORIGINAL_SOURCE):
         raise FileNotFoundError(f"Documento original nao encontrado: {ORIGINAL_SOURCE}")
@@ -90,6 +106,12 @@ def main():
         remove_paragraph(p)
 
     # ---------- Especificações ----------
+    # o paragrafo 170 contem o inicio do bookmark _Toc190957976, cujo fim
+    # esta no paragrafo 178 ("Prazo e Preço") -- usado pelo indice (PAGEREF).
+    # Precisa ser preservado antes de apagar o paragrafo, senao o indice
+    # gera "Erro! Indicador nao definido." para essa entrada.
+    mover_bookmark_start(paragraphs[170], paragraphs[167], bookmark_id=6)
+
     # paragrafos 170/172/174/176 descreviam os itens da proposta ORIGINAL em
     # texto livre; substituimos por uma tabela dinamica vinda da LPU.
     clear_and_set_text(paragraphs[170], "{{p itens_tabela}}")

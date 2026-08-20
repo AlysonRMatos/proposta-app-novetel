@@ -1,3 +1,4 @@
+import hashlib
 import os
 import tempfile
 from datetime import date
@@ -66,6 +67,7 @@ CAMPOS_LIMPAVEIS = [
     "valor_total_extenso",
     "data_proposta",
     "observacoes_exclusao",
+    "_lpu_fingerprint",
 ]
 
 col_titulo, col_limpar = st.columns([4, 1])
@@ -200,6 +202,22 @@ if lpu_file is not None:
     dados_lpu = carregar_lpu(tmp_path, lpu_file.name)
     os.unlink(tmp_path)
 
+    # Sempre que uma LPU NOVA (ou diferente) e carregada, atualiza os campos
+    # dependentes dela. Sem isso, os widgets "travam" no primeiro valor
+    # carregado e ignoram uploads seguintes (comportamento padrao do
+    # Streamlit quando o widget ja tem uma key com valor em session_state).
+    fingerprint = hashlib.md5(lpu_bytes).hexdigest()
+    if st.session_state.get("_lpu_fingerprint") != fingerprint:
+        st.session_state["_lpu_fingerprint"] = fingerprint
+        st.session_state["cidade"] = dados_lpu["local"] or ""
+        st.session_state["endereco"] = dados_lpu["endereco"] or ""
+        st.session_state["prazo_execucao"] = dados_lpu["prazo_execucao"] or ""
+        st.session_state["valor_total_extenso"] = (
+            valor_completo(dados_lpu["valor_total_bdi"])
+            if dados_lpu["valor_total_bdi"] is not None
+            else ""
+        )
+
     col1, col2, col3 = st.columns(3)
     col1.metric("Codigo do projeto", dados_lpu["codigo_projeto"] or "-")
     col2.metric("Local", dados_lpu["local"] or "-")
@@ -279,34 +297,19 @@ with col1:
         placeholder="Ex: Escopo instalacoes - JIRA INFRA 1623+2504",
         key="escopo_titulo",
     )
-    cidade = st.text_input(
-        "Cidade",
-        value=(dados_lpu["local"] if dados_lpu else ""),
-        key="cidade",
-    )
-    endereco = st.text_area(
-        "Endereco",
-        value=(dados_lpu["endereco"] if dados_lpu else ""),
-        height=80,
-        key="endereco",
-    )
+    cidade = st.text_input("Cidade", key="cidade")
+    endereco = st.text_area("Endereco", height=80, key="endereco")
 with col2:
     objeto = st.text_area(
         "Objeto", height=80, placeholder="Descreva o objeto do servico", key="objeto"
     )
     prazo_execucao = st.text_input(
         "Prazo de execucao (preenchido automaticamente pela LPU, editavel se necessario)",
-        value=(dados_lpu["prazo_execucao"] if dados_lpu else ""),
         placeholder="Ex: 10 dias",
         key="prazo_execucao",
     )
-
-    valor_sugerido = ""
-    if dados_lpu and dados_lpu["valor_total_bdi"] is not None:
-        valor_sugerido = valor_completo(dados_lpu["valor_total_bdi"])
     valor_total_extenso = st.text_input(
         "Valor total (preenchido automaticamente pela LPU, editavel se necessario)",
-        value=valor_sugerido,
         key="valor_total_extenso",
     )
 
