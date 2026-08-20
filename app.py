@@ -12,6 +12,7 @@ from valor_extenso import formatar_moeda_brl, valor_por_extenso, valor_completo
 from clientes import obter_abreviacao
 from imagens_grid import montar_grid_imagens
 from counter import montar_codigo
+from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -122,9 +123,10 @@ with st.expander("Historico de propostas geradas"):
         escolha = st.selectbox("Proposta", list(opcoes.keys()))
         if escolha:
             numero_sel = opcoes[escolha]
-            col_a, col_b = st.columns(2)
+            col_a, col_b, col_c = st.columns(3)
             lpu_arq = db.obter_lpu(numero_sel)
             prop_arq = db.obter_proposta_docx(numero_sel)
+            prop_pdf_arq = db.obter_proposta_pdf(numero_sel)
             if lpu_arq:
                 col_a.download_button(
                     "Baixar LPU original",
@@ -136,13 +138,22 @@ with st.expander("Historico de propostas geradas"):
                 col_a.caption("LPU nao disponivel para essa proposta.")
             if prop_arq:
                 col_b.download_button(
-                    "Baixar proposta gerada",
+                    "Baixar proposta (.docx)",
                     data=prop_arq[1],
                     file_name=prop_arq[0],
                     key=f"prop_{numero_sel}",
                 )
             else:
-                col_b.caption("Proposta nao disponivel.")
+                col_b.caption("Proposta (.docx) nao disponivel.")
+            if prop_pdf_arq:
+                col_c.download_button(
+                    "Baixar proposta (.pdf)",
+                    data=prop_pdf_arq[1],
+                    file_name=prop_pdf_arq[0],
+                    key=f"proppdf_{numero_sel}",
+                )
+            else:
+                col_c.caption("Proposta (.pdf) nao disponivel.")
 
             if lpu_arq and st.checkbox("Visualizar itens da LPU", key=f"ver_lpu_{numero_sel}"):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_hist:
@@ -370,6 +381,17 @@ if gerar:
     with open(caminho_saida, "rb") as f:
         proposta_bytes = f.read()
 
+    nome_saida_pdf = None
+    proposta_pdf_bytes = None
+    if conversao_disponivel():
+        try:
+            proposta_pdf_bytes = converter_docx_para_pdf_bytes(proposta_bytes)
+            nome_saida_pdf = nome_saida.replace(".docx", ".pdf")
+        except Exception as e:
+            st.warning(f"Nao foi possivel gerar o PDF automaticamente: {e}")
+    else:
+        st.info("Conversor de PDF nao disponivel neste ambiente; apenas o .docx foi gerado.")
+
     db.salvar_proposta(
         numero=numero_proposta,
         abreviacao_cliente=abreviacao_cliente,
@@ -382,12 +404,22 @@ if gerar:
         lpu_arquivo=lpu_bytes,
         proposta_nome_arquivo=nome_saida,
         proposta_arquivo=proposta_bytes,
+        proposta_pdf_nome_arquivo=nome_saida_pdf,
+        proposta_pdf_arquivo=proposta_pdf_bytes,
     )
 
     st.success(f"Proposta gerada: {codigo_proposta}")
-    st.download_button(
+    col_docx, col_pdf = st.columns(2)
+    col_docx.download_button(
         "Baixar proposta (.docx)",
         data=proposta_bytes,
         file_name=nome_saida,
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+    if proposta_pdf_bytes:
+        col_pdf.download_button(
+            "Baixar proposta (.pdf)",
+            data=proposta_pdf_bytes,
+            file_name=nome_saida_pdf,
+            mime="application/pdf",
+        )

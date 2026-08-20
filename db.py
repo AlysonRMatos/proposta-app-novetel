@@ -100,6 +100,8 @@ def _criar_tabelas(engine):
         ("lpu_arquivo", "BYTEA"),
         ("proposta_nome_arquivo", "TEXT"),
         ("proposta_arquivo", "BYTEA"),
+        ("proposta_pdf_nome_arquivo", "TEXT"),
+        ("proposta_pdf_arquivo", "BYTEA"),
     ]:
         _adicionar_coluna_se_necessario(engine, coluna, tipo)
 
@@ -141,6 +143,8 @@ def salvar_proposta(
     lpu_arquivo: bytes = None,
     proposta_nome_arquivo: str = None,
     proposta_arquivo: bytes = None,
+    proposta_pdf_nome_arquivo: str = None,
+    proposta_pdf_arquivo: bytes = None,
 ) -> str:
     """Grava o registro completo da proposta (numero ja reservado
     previamente com proximo_numero_atomic), incluindo os arquivos."""
@@ -153,11 +157,13 @@ def salvar_proposta(
                 INSERT INTO propostas (
                     numero, codigo, cliente, abreviacao_cliente,
                     codigo_projeto, local, data_proposta, valor_total, criado_em,
-                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo
+                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
+                    proposta_pdf_nome_arquivo, proposta_pdf_arquivo
                 ) VALUES (
                     :numero, :codigo, :cliente, :abrev,
                     :codigo_projeto, :local, :data_proposta, :valor_total, :criado_em,
-                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq
+                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
+                    :prop_pdf_nome, :prop_pdf_arq
                 )
                 """
             ),
@@ -175,6 +181,8 @@ def salvar_proposta(
                 "lpu_arq": lpu_arquivo,
                 "prop_nome": proposta_nome_arquivo,
                 "prop_arq": proposta_arquivo,
+                "prop_pdf_nome": proposta_pdf_nome_arquivo,
+                "prop_pdf_arq": proposta_pdf_arquivo,
             },
         )
     return codigo
@@ -217,6 +225,19 @@ def obter_proposta_docx(numero: int):
     with engine.connect() as conn:
         row = conn.execute(
             text("SELECT proposta_nome_arquivo, proposta_arquivo FROM propostas WHERE numero = :n"),
+            {"n": numero},
+        ).fetchone()
+        if row and row[1] is not None:
+            return row[0], bytes(row[1])
+        return None
+
+
+def obter_proposta_pdf(numero: int):
+    """Retorna (nome_arquivo, bytes) do .pdf gerado nessa proposta, ou None."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT proposta_pdf_nome_arquivo, proposta_pdf_arquivo FROM propostas WHERE numero = :n"),
             {"n": numero},
         ).fetchone()
         if row and row[1] is not None:
