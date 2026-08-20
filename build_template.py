@@ -12,6 +12,7 @@ import os
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
@@ -131,6 +132,17 @@ def main():
         "tributos e obrigações para a correta execução do serviço, conforme "
         "a boa norma construtiva perfazem o montante de {{ valor_total_extenso }}.",
     )
+
+    # ---------- Atualizacao automatica de campos (indice/PAGEREF) ----------
+    # Sem isso, os numeros de pagina do indice ficam "congelados" com os
+    # valores em cache do documento original, ja que nem python-docx nem
+    # LibreOffice recalculam layout ao salvar via codigo. Esta flag manda o
+    # Word (e o LibreOffice, que a respeita) recalcular todos os campos
+    # automaticamente ao abrir/converter o documento.
+    settings_el = doc.settings.element
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
+    settings_el.append(update_fields)
 
     # ---------- Numero da proposta (canto superior da capa) ----------
     primeiro_paragrafo = doc.paragraphs[0]

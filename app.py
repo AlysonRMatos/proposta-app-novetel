@@ -15,6 +15,7 @@ from clientes import obter_abreviacao
 from imagens_grid import montar_grid_imagens
 from counter import montar_codigo
 from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
+from indice_fix import corrigir_indice
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -394,6 +395,12 @@ if gerar:
     proposta_pdf_bytes = None
     if conversao_disponivel():
         try:
+            # 1a passada: só para descobrir em qual pagina cada secao caiu
+            pdf_rascunho = converter_docx_para_pdf_bytes(proposta_bytes)
+            # corrige os numeros do indice (cache de campo PAGEREF) com as
+            # paginas reais descobertas na 1a passada
+            proposta_bytes = corrigir_indice(proposta_bytes, pdf_rascunho)
+            # 2a passada: gera o PDF final ja com o indice correto
             proposta_pdf_bytes = converter_docx_para_pdf_bytes(proposta_bytes)
             nome_saida_pdf = nome_saida.replace(".docx", ".pdf")
         except Exception as e:

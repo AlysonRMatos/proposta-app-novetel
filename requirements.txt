@@ -7,3 +7,4 @@ pandas
 num2words
 sqlalchemy
 psycopg2-binary
+pymupdf
