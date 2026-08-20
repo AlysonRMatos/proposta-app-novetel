@@ -1,4 +1,5 @@
 import hashlib
+import io
 import os
 import tempfile
 from datetime import date
@@ -18,7 +19,6 @@ import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(BASE_DIR, "templates", "template_proposta.docx")
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 st.set_page_config(page_title="Gerador de Propostas - Novetel", layout="wide")
 
@@ -385,12 +385,10 @@ if gerar:
 
     tpl.render(context)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     nome_saida = f"{codigo_proposta}_{dados_lpu['codigo_projeto']}_{cliente}.docx".replace(" ", "_")
-    caminho_saida = os.path.join(OUTPUT_DIR, nome_saida)
-    tpl.save(caminho_saida)
-    with open(caminho_saida, "rb") as f:
-        proposta_bytes = f.read()
+    buffer_docx = io.BytesIO()
+    tpl.save(buffer_docx)
+    proposta_bytes = buffer_docx.getvalue()
 
     nome_saida_pdf = None
     proposta_pdf_bytes = None
