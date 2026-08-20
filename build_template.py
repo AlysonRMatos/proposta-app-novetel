@@ -82,8 +82,12 @@ def main():
     # paragrafo 99 contem a foto especifica da proposta original -> vira o
     # ponto de insercao dinamica dos anexos de cada nova proposta.
     clear_and_set_text(paragraphs[99], "{{p imagens}}")
-    # paragrafo 120 e um resíduo de texto ("33") sem uso, remove o conteudo.
-    clear_and_set_text(paragraphs[120], "")
+    # paragrafos 100 a 135 sao espacadores vazios que reservavam altura de
+    # pagina para as fotos fixas do modelo original; somados, empurravam o
+    # conteudo e geravam uma pagina em branco antes de "Escopo". Removidos
+    # pois o grid dinamico de imagens ja controla seu proprio espaco.
+    for p in paragraphs[100:136]:
+        remove_paragraph(p)
 
     # ---------- Especificações ----------
     # paragrafos 170/172/174/176 descreviam os itens da proposta ORIGINAL em

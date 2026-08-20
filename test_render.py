@@ -23,9 +23,11 @@ for it in dados_lpu["itens"][:5]:
 from imagens_grid import montar_grid_imagens
 
 IMAGENS_TESTE = [
-    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract2\unzipped\word\media\image5.png",
-    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract2\unzipped\word\media\image2.png",
-    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract2\unzipped\word\media\image3.png",
+    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract3\unzipped\word\media\image5.png",
+    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract3\unzipped\word\media\image2.png",
+    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract3\unzipped\word\media\image3.png",
+    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract3\unzipped\word\media\image6.png",
+    r"C:\Users\alyso\AppData\Local\Temp\claude\proposta_extract3\unzipped\word\media\image1.png",
 ]
 
 tpl = DocxTemplate(TEMPLATE_PATH)
