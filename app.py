@@ -2,6 +2,7 @@ import os
 import tempfile
 from datetime import date
 
+import pandas as pd
 import streamlit as st
 from docxtpl import DocxTemplate
 
@@ -50,7 +51,32 @@ def _autenticado() -> bool:
 if not _autenticado():
     st.stop()
 
-st.title("Gerador de Propostas Tecnicas")
+if "uploader_version" not in st.session_state:
+    st.session_state["uploader_version"] = 0
+
+CAMPOS_LIMPAVEIS = [
+    "cliente",
+    "abreviacao_cliente",
+    "escopo_titulo",
+    "cidade",
+    "endereco",
+    "objeto",
+    "prazo_execucao",
+    "valor_total_extenso",
+    "data_proposta",
+    "observacoes_exclusao",
+]
+
+col_titulo, col_limpar = st.columns([4, 1])
+with col_titulo:
+    st.title("Gerador de Propostas Tecnicas")
+with col_limpar:
+    st.write("")
+    if st.button("Limpar todos os campos"):
+        for campo in CAMPOS_LIMPAVEIS:
+            st.session_state.pop(campo, None)
+        st.session_state["uploader_version"] += 1
+        st.rerun()
 
 if not os.path.exists(TEMPLATE_PATH):
     st.error(
@@ -147,7 +173,11 @@ with st.expander("Historico de propostas geradas"):
 
 # ---------- 1. Planilha LPU ----------
 st.header("1. Planilha LPU")
-lpu_file = st.file_uploader("Selecione a planilha LPU (.xlsx)", type=["xlsx"])
+lpu_file = st.file_uploader(
+    "Selecione a planilha LPU (.xlsx)",
+    type=["xlsx"],
+    key=f"lpu_uploader_{st.session_state.uploader_version}",
+)
 
 dados_lpu = None
 lpu_bytes = None
@@ -169,31 +199,46 @@ if lpu_file is not None:
     else:
         st.warning("Nao foi possivel calcular o valor total automaticamente a partir da LPU.")
 
-    st.write(f"**{len(dados_lpu['itens'])} itens** encontrados com quantidade preenchida (serao executados):")
-    st.dataframe(
-        [
-            {
-                "Codigo": i["codigo"],
-                "Descricao": i["descricao"],
-                "Qtd.": i["quantidade"],
-                "Unid.": i["unidade"],
-            }
-            for i in dados_lpu["itens"]
-        ],
-        use_container_width=True,
-        height=250,
-    )
-
     itens_selecionados = []
-    with st.expander("Ajustar itens incluidos na proposta (desmarque para excluir)"):
-        for idx, item in enumerate(dados_lpu["itens"]):
-            incluido = st.checkbox(
-                f"{item['codigo']} - {item['descricao']} ({item['quantidade']} {item['unidade']})",
-                value=True,
-                key=f"item_{idx}",
-            )
-            if incluido:
-                itens_selecionados.append(item)
+    if dados_lpu["itens"]:
+        st.write(
+            f"**{len(dados_lpu['itens'])} itens** encontrados com quantidade preenchida "
+            "(serao executados). Voce pode editar descricao/quantidade/unidade ou desmarcar "
+            "'Incluir' para excluir um item da proposta:"
+        )
+        df_itens = pd.DataFrame(
+            [
+                {
+                    "Incluir": True,
+                    "Codigo": item["codigo"],
+                    "Descricao": item["descricao"],
+                    "Qtd.": item["quantidade"],
+                    "Unid.": item["unidade"],
+                }
+                for item in dados_lpu["itens"]
+            ]
+        )
+        df_editado = st.data_editor(
+            df_itens,
+            use_container_width=True,
+            height=300,
+            num_rows="fixed",
+            disabled=["Codigo"],
+            key=f"itens_editor_{st.session_state.uploader_version}",
+            column_config={"Incluir": st.column_config.CheckboxColumn("Incluir")},
+        )
+        itens_selecionados = [
+            {
+                "codigo": row["Codigo"],
+                "descricao": row["Descricao"],
+                "quantidade": row["Qtd."],
+                "unidade": row["Unid."],
+            }
+            for _, row in df_editado.iterrows()
+            if row["Incluir"]
+        ]
+    else:
+        st.warning("Nenhum item com quantidade preenchida foi encontrado na LPU.")
 else:
     itens_selecionados = []
     st.info("Envie a planilha LPU para continuar.")
@@ -202,32 +247,39 @@ else:
 st.header("2. Dados da proposta")
 col1, col2 = st.columns(2)
 with col1:
-    cliente = st.text_input("Cliente", placeholder="Ex: Shopee")
+    cliente = st.text_input("Cliente", placeholder="Ex: Shopee", key="cliente")
     abreviacao_cliente = st.text_input(
         "Abreviação do cliente (usada no código da proposta)",
         value=obter_abreviacao(cliente),
         placeholder="Ex: SHO",
         max_chars=10,
+        key="abreviacao_cliente",
     ).strip().upper()
     escopo_titulo = st.text_input(
         "Titulo do escopo (linha da capa)",
         placeholder="Ex: Escopo instalacoes - JIRA INFRA 1623+2504",
+        key="escopo_titulo",
     )
     cidade = st.text_input(
         "Cidade",
         value=(dados_lpu["local"] if dados_lpu else ""),
+        key="cidade",
     )
     endereco = st.text_area(
         "Endereco",
         value=(dados_lpu["endereco"] if dados_lpu else ""),
         height=80,
+        key="endereco",
     )
 with col2:
-    objeto = st.text_area("Objeto", height=80, placeholder="Descreva o objeto do servico")
+    objeto = st.text_area(
+        "Objeto", height=80, placeholder="Descreva o objeto do servico", key="objeto"
+    )
     prazo_execucao = st.text_input(
         "Prazo de execucao (preenchido automaticamente pela LPU, editavel se necessario)",
         value=(dados_lpu["prazo_execucao"] if dados_lpu else ""),
         placeholder="Ex: 10 dias",
+        key="prazo_execucao",
     )
 
     valor_sugerido = ""
@@ -236,9 +288,10 @@ with col2:
     valor_total_extenso = st.text_input(
         "Valor total (preenchido automaticamente pela LPU, editavel se necessario)",
         value=valor_sugerido,
+        key="valor_total_extenso",
     )
 
-data_proposta = st.date_input("Data da proposta", value=date.today())
+data_proposta = st.date_input("Data da proposta", value=date.today(), key="data_proposta")
 
 # ---------- 3. Documentos disponibilizados ----------
 st.header("3. Documentos disponibilizados (prints do projeto)")
@@ -246,6 +299,7 @@ imagens_upload = st.file_uploader(
     "Anexe as imagens/prints do projeto",
     type=["png", "jpg", "jpeg"],
     accept_multiple_files=True,
+    key=f"imagens_uploader_{st.session_state.uploader_version}",
 )
 
 # ---------- 4. Observacoes de itens exclusos ----------
@@ -254,6 +308,7 @@ observacoes_exclusao = st.text_area(
     "Itens exclusos desta proposta (o que NAO esta contemplado)",
     height=100,
     placeholder="Ex: Nao esta incluso o fornecimento de...",
+    key="observacoes_exclusao",
 )
 
 # ---------- Gerar ----------
