@@ -117,6 +117,31 @@ with st.expander("Historico de propostas geradas"):
                 )
             else:
                 col_b.caption("Proposta nao disponivel.")
+
+            if lpu_arq and st.checkbox("Visualizar itens da LPU", key=f"ver_lpu_{numero_sel}"):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_hist:
+                    tmp_hist.write(lpu_arq[1])
+                    tmp_hist_path = tmp_hist.name
+                dados_lpu_hist = carregar_lpu(tmp_hist_path, lpu_arq[0])
+                os.unlink(tmp_hist_path)
+
+                col_h1, col_h2, col_h3 = st.columns(3)
+                col_h1.metric("Codigo do projeto", dados_lpu_hist["codigo_projeto"] or "-")
+                col_h2.metric("Local", dados_lpu_hist["local"] or "-")
+                col_h3.metric("Disciplina", dados_lpu_hist["disciplina"])
+                st.dataframe(
+                    [
+                        {
+                            "Codigo": i["codigo"],
+                            "Descricao": i["descricao"],
+                            "Qtd.": i["quantidade"],
+                            "Unid.": i["unidade"],
+                        }
+                        for i in dados_lpu_hist["itens"]
+                    ],
+                    use_container_width=True,
+                    height=250,
+                )
     else:
         st.caption("Nenhuma proposta gerada ainda.")
 
