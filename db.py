@@ -109,7 +109,16 @@ def _criar_tabelas(engine):
 def _get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(_obter_database_url())
+        _engine = create_engine(
+            _obter_database_url(),
+            # A Neon (free tier) suspende o compute apos alguns minutos
+            # ocioso. pool_pre_ping testa a conexao antes de usa-la e
+            # reconecta automaticamente se estiver morta (em vez de
+            # estourar OperationalError); pool_recycle descarta conexoes
+            # antigas preventivamente.
+            pool_pre_ping=True,
+            pool_recycle=180,
+        )
         _criar_tabelas(_engine)
     return _engine
 
