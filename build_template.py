@@ -106,6 +106,10 @@ def main():
     for p in paragraphs[100:136]:
         remove_paragraph(p)
 
+    # "Documentos disponibilizados" deve ficar isolado (somente as fotos);
+    # "Escopo" sempre comeca em pagina nova, tenha poucas ou muitas fotos.
+    paragraphs[136].paragraph_format.page_break_before = True
+
     # ---------- Especificações ----------
     # o paragrafo 170 contem o inicio do bookmark _Toc190957976, cujo fim
     # esta no paragrafo 178 ("Prazo e Preço") -- usado pelo indice (PAGEREF).
@@ -116,6 +120,13 @@ def main():
     # paragrafos 170/172/174/176 descreviam os itens da proposta ORIGINAL em
     # texto livre; substituimos por uma tabela dinamica vinda da LPU.
     clear_and_set_text(paragraphs[170], "{{p itens_tabela}}")
+
+    # Secao de observacoes (itens exclusos da proposta), logo apos a tabela.
+    obs_titulo = paragraphs[172].insert_paragraph_before()
+    obs_titulo.add_run("Observações - itens exclusos desta proposta:").bold = True
+    obs_texto = paragraphs[172].insert_paragraph_before()
+    obs_texto.add_run("{{ observacoes_exclusao }}")
+
     remove_paragraph(paragraphs[172])
     remove_paragraph(paragraphs[174])
     remove_paragraph(paragraphs[176])
