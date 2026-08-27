@@ -324,7 +324,7 @@ else:
 
 
 # ---------- REVISÃO de proposta existente ----------
-st.header("REVISÃO")
+st.header("Revisão")
 propostas_existentes = db.listar_propostas()
 numero_pai_revisao = None
 codigo_pai_revisao = None
