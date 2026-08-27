@@ -17,9 +17,14 @@ def montar_secao_revisao(
     solicitacao_alteracao: str = None,
     itens_antigos: list = None,
     itens_novos: list = None,
+    itens_alterados: list = None,
+    itens_adicionados: list = None,
+    justificativas_itens: dict = None,
 ):
     if not ativa:
         return
+
+    justificativas_itens = justificativas_itens or {}
 
     from docx.shared import RGBColor
 
@@ -45,8 +50,36 @@ def montar_secao_revisao(
     if codigo_pai:
         add_body(f"Referente à proposta original: {codigo_pai}", space_after=10)
 
+    def add_bullet(texto):
+        p = subdoc.add_paragraph()
+        p.paragraph_format.left_indent = Pt(18)
+        p.paragraph_format.space_after = Pt(4)
+        run = p.add_run(f"•  {texto}")
+        run.font.name = FONT_NAME
+        run.font.size = Pt(11)
+
     add_body("Solicitação de alteração desta revisão:", bold=True, space_after=4)
     add_body(solicitacao_alteracao or "Não informado.", space_after=14)
+
+    if itens_alterados:
+        add_body("Itens com quantidade alterada nesta revisão:", bold=True, space_after=4)
+        for item in itens_alterados:
+            motivo = justificativas_itens.get(item["codigo"]) or "Motivo não informado."
+            add_bullet(
+                f"{item['codigo']} - {item['descricao']}: "
+                f"{item['qtd_antiga']} → {item['qtd_nova']} {item['unidade']} — Motivo: {motivo}"
+            )
+        subdoc.add_paragraph()
+
+    if itens_adicionados:
+        add_body("Itens novos incluídos nesta revisão:", bold=True, space_after=4)
+        for item in itens_adicionados:
+            motivo = justificativas_itens.get(item["codigo"]) or "Motivo não informado."
+            add_bullet(
+                f"{item['codigo']} - {item['descricao']} "
+                f"({item['quantidade']} {item['unidade']}) — Motivo: {motivo}"
+            )
+        subdoc.add_paragraph()
 
     if itens_antigos:
         add_body("Itens da versão anterior (referência):", bold=True, space_after=6)

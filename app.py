@@ -17,6 +17,7 @@ from counter import montar_codigo, montar_codigo_revisao
 from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
 from indice_fix import corrigir_indice
 from revisao_secao import montar_secao_revisao
+from comparar_lpu import comparar_itens
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -314,6 +315,9 @@ codigo_pai_revisao = None
 solicitacao_alteracao = ""
 itens_antigos_revisao = []
 imagens_antigas_revisao = []
+itens_alterados_revisao = []
+itens_adicionados_revisao = []
+justificativas_itens = {}
 
 with st.expander("Revisar uma proposta existente (opcional)"):
     opcoes_revisao = ["Nenhuma (proposta nova)"] + [
@@ -401,6 +405,31 @@ with st.expander("Revisar uma proposta existente (opcional)"):
             st.caption(
                 f"{len(imagens_antigas_revisao)} foto(s) da proposta anterior serão "
                 "reaproveitadas (além de qualquer foto nova que você anexar abaixo)."
+            )
+
+        # Compara a LPU antiga (referencia) com a LPU nova ja carregada na
+        # secao 1, e pede o motivo de cada quantidade alterada ou item novo.
+        itens_alterados_revisao, itens_adicionados_revisao = comparar_itens(
+            itens_antigos_revisao, itens_selecionados
+        )
+        if itens_alterados_revisao or itens_adicionados_revisao:
+            st.write(
+                "**A LPU nova tem itens com quantidade diferente ou itens que não "
+                "existiam na LPU anterior. Diga o motivo de cada um (vai para o "
+                "documento e para o banco):**"
+            )
+        for item in itens_alterados_revisao:
+            justificativas_itens[item["codigo"]] = st.text_input(
+                f"{item['codigo']} - {item['descricao']}: "
+                f"{item['qtd_antiga']} → {item['qtd_nova']} {item['unidade']} "
+                "— motivo da alteração",
+                key=f"motivo_{item['codigo']}",
+            )
+        for item in itens_adicionados_revisao:
+            justificativas_itens[item["codigo"]] = st.text_input(
+                f"NOVO: {item['codigo']} - {item['descricao']} "
+                f"({item['quantidade']} {item['unidade']}) — motivo da inclusão",
+                key=f"motivo_novo_{item['codigo']}",
             )
 
 # ---------- 2. Dados da proposta ----------
@@ -525,6 +554,9 @@ if gerar:
         solicitacao_alteracao=solicitacao_alteracao,
         itens_antigos=itens_antigos_revisao,
         itens_novos=itens_selecionados,
+        itens_alterados=itens_alterados_revisao,
+        itens_adicionados=itens_adicionados_revisao,
+        justificativas_itens=justificativas_itens,
     )
 
     context = {
@@ -596,6 +628,7 @@ if gerar:
             numero_pai=numero_pai_revisao,
             numero_revisao=numero_revisao_atual,
             solicitacao_alteracao=solicitacao_alteracao,
+            justificativas_itens=justificativas_itens,
             **campos_comuns,
         )
         db.salvar_imagens_revisao(numero_pai_revisao, numero_revisao_atual, imagens_para_salvar)

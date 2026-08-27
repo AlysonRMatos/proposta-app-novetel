@@ -168,6 +168,7 @@ def _criar_tabelas(engine):
         _adicionar_coluna_se_necessario(engine, "propostas", coluna, tipo)
     for coluna, tipo in _CAMPOS_ARQUIVOS + _CAMPOS_FORMULARIO:
         _adicionar_coluna_se_necessario(engine, "revisoes", coluna, tipo)
+    _adicionar_coluna_se_necessario(engine, "revisoes", "justificativas_itens", "TEXT")
 
 
 def _get_engine():
@@ -421,7 +422,10 @@ def salvar_revisao(
     proposta_arquivo: bytes = None,
     proposta_pdf_nome_arquivo: str = None,
     proposta_pdf_arquivo: bytes = None,
+    justificativas_itens: dict = None,
 ) -> str:
+    import json
+
     codigo = montar_codigo_revisao(abreviacao_cliente, numero_pai, numero_revisao, data_proposta)
     engine = _get_engine()
     with engine.begin() as conn:
@@ -433,7 +437,7 @@ def salvar_revisao(
                     codigo_projeto, local, data_proposta, valor_total,
                     solicitacao_alteracao, criado_em,
                     escopo_titulo, objeto, endereco, cidade, prazo_execucao,
-                    observacoes_exclusao,
+                    observacoes_exclusao, justificativas_itens,
                     lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
                     proposta_pdf_nome_arquivo, proposta_pdf_arquivo
                 ) VALUES (
@@ -441,7 +445,7 @@ def salvar_revisao(
                     :codigo_projeto, :local, :data_proposta, :valor_total,
                     :solicitacao, :criado_em,
                     :escopo_titulo, :objeto, :endereco, :cidade, :prazo_execucao,
-                    :observacoes_exclusao,
+                    :observacoes_exclusao, :justificativas,
                     :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
                     :prop_pdf_nome, :prop_pdf_arq
                 )
@@ -465,6 +469,7 @@ def salvar_revisao(
                 "cidade": cidade,
                 "prazo_execucao": prazo_execucao,
                 "observacoes_exclusao": observacoes_exclusao,
+                "justificativas": json.dumps(justificativas_itens or {}, ensure_ascii=False),
                 "lpu_nome": lpu_nome_arquivo,
                 "lpu_arq": lpu_arquivo,
                 "prop_nome": proposta_nome_arquivo,
