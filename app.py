@@ -106,18 +106,17 @@ else:
 
 st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero():04d}**")
 
-st.subheader("Histórico de propostas geradas")
-historico = db.listar_propostas()
-if historico:
-    for h in historico:
-        revisoes_da_proposta = db.listar_revisoes(h.numero)
-        label = f"{h.codigo} — {h.cliente}"
-        if h.valor_total is not None:
-            label += f" — {formatar_moeda_brl(h.valor_total)}"
-        if revisoes_da_proposta:
-            label += f"  🔁 {len(revisoes_da_proposta)} revisão(ões)"
-
-        with st.expander(label):
+with st.expander("Histórico de propostas geradas"):
+    historico = db.listar_propostas()
+    if historico:
+        for idx_h, h in enumerate(historico):
+            if idx_h > 0:
+                st.divider()
+            revisoes_da_proposta = db.listar_revisoes(h.numero)
+            titulo = f"**{h.codigo} — {h.cliente}**"
+            if h.valor_total is not None:
+                titulo += f" — {formatar_moeda_brl(h.valor_total)}"
+            st.write(titulo)
             st.caption(
                 f"Projeto: {h.codigo_projeto or '-'} | Local: {h.local or '-'} | "
                 f"Data: {h.data_proposta} | Criado em: {h.criado_em}"
@@ -181,33 +180,32 @@ if historico:
                 )
 
             if revisoes_da_proposta:
-                st.divider()
-                st.write("**Revisões desta proposta:**")
-                for r in revisoes_da_proposta:
-                    st.write(
-                        f"RV{r.numero_revisao:02d} — {r.codigo} — "
-                        f"{formatar_moeda_brl(r.valor_total) if r.valor_total is not None else '-'} "
-                        f"— {r.solicitacao_alteracao or 'sem descrição'}"
-                    )
-                    col_r1, col_r2 = st.columns(2)
-                    rev_docx = db.obter_revisao_docx(numero_sel, r.numero_revisao)
-                    rev_pdf = db.obter_revisao_pdf(numero_sel, r.numero_revisao)
-                    if rev_docx:
-                        col_r1.download_button(
-                            "Baixar revisão (.docx)",
-                            data=rev_docx[1],
-                            file_name=rev_docx[0],
-                            key=f"revdocx_{numero_sel}_{r.numero_revisao}",
+                with st.expander(f"🔁 Ver {len(revisoes_da_proposta)} revisão(ões) desta proposta"):
+                    for r in revisoes_da_proposta:
+                        st.write(
+                            f"RV{r.numero_revisao:02d} — {r.codigo} — "
+                            f"{formatar_moeda_brl(r.valor_total) if r.valor_total is not None else '-'} "
+                            f"— {r.solicitacao_alteracao or 'sem descrição'}"
                         )
-                    if rev_pdf:
-                        col_r2.download_button(
-                            "Baixar revisão (.pdf)",
-                            data=rev_pdf[1],
-                            file_name=rev_pdf[0],
-                            key=f"revpdf_{numero_sel}_{r.numero_revisao}",
-                        )
-else:
-    st.caption("Nenhuma proposta gerada ainda.")
+                        col_r1, col_r2 = st.columns(2)
+                        rev_docx = db.obter_revisao_docx(numero_sel, r.numero_revisao)
+                        rev_pdf = db.obter_revisao_pdf(numero_sel, r.numero_revisao)
+                        if rev_docx:
+                            col_r1.download_button(
+                                "Baixar revisão (.docx)",
+                                data=rev_docx[1],
+                                file_name=rev_docx[0],
+                                key=f"revdocx_{numero_sel}_{r.numero_revisao}",
+                            )
+                        if rev_pdf:
+                            col_r2.download_button(
+                                "Baixar revisão (.pdf)",
+                                data=rev_pdf[1],
+                                file_name=rev_pdf[0],
+                                key=f"revpdf_{numero_sel}_{r.numero_revisao}",
+                            )
+    else:
+        st.caption("Nenhuma proposta gerada ainda.")
 
 # ---------- 1. Planilha LPU ----------
 st.header("1. Planilha LPU")
