@@ -106,106 +106,130 @@ else:
 
 st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero():04d}**")
 
+historico = db.listar_propostas()
+
 with st.expander("Histórico de propostas geradas"):
-    historico = db.listar_propostas()
+    # Consulta leve (sem buscar os arquivos/blobs de cada proposta) para o
+    # app continuar rapido pra abrir mesmo com muitas propostas geradas.
     if historico:
-        for idx_h, h in enumerate(historico):
-            if idx_h > 0:
-                st.divider()
-            revisoes_da_proposta = db.listar_revisoes(h.numero)
-            titulo = f"**{h.codigo} — {h.cliente}**"
-            if h.valor_total is not None:
-                titulo += f" — {formatar_moeda_brl(h.valor_total)}"
-            st.write(titulo)
-            st.caption(
-                f"Projeto: {h.codigo_projeto or '-'} | Local: {h.local or '-'} | "
-                f"Data: {h.data_proposta} | Criado em: {h.criado_em}"
-            )
-            numero_sel = h.numero
-            col_a, col_b, col_c = st.columns(3)
-            lpu_arq = db.obter_lpu(numero_sel)
-            prop_arq = db.obter_proposta_docx(numero_sel)
-            prop_pdf_arq = db.obter_proposta_pdf(numero_sel)
-            if lpu_arq:
-                col_a.download_button(
-                    "Baixar LPU original",
-                    data=lpu_arq[1],
-                    file_name=lpu_arq[0],
-                    key=f"lpu_{numero_sel}",
-                )
-            else:
-                col_a.caption("LPU nao disponivel para essa proposta.")
-            if prop_arq:
-                col_b.download_button(
-                    "Baixar proposta (.docx)",
-                    data=prop_arq[1],
-                    file_name=prop_arq[0],
-                    key=f"prop_{numero_sel}",
-                )
-            else:
-                col_b.caption("Proposta (.docx) nao disponivel.")
-            if prop_pdf_arq:
-                col_c.download_button(
-                    "Baixar proposta (.pdf)",
-                    data=prop_pdf_arq[1],
-                    file_name=prop_pdf_arq[0],
-                    key=f"proppdf_{numero_sel}",
-                )
-            else:
-                col_c.caption("Proposta (.pdf) nao disponivel.")
-
-            if lpu_arq and st.checkbox("Visualizar itens da LPU", key=f"ver_lpu_{numero_sel}"):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_hist:
-                    tmp_hist.write(lpu_arq[1])
-                    tmp_hist_path = tmp_hist.name
-                dados_lpu_hist = carregar_lpu(tmp_hist_path, lpu_arq[0])
-                os.unlink(tmp_hist_path)
-
-                col_h1, col_h2, col_h3 = st.columns(3)
-                col_h1.metric("Codigo do projeto", dados_lpu_hist["codigo_projeto"] or "-")
-                col_h2.metric("Local", dados_lpu_hist["local"] or "-")
-                col_h3.metric("Disciplina", dados_lpu_hist["disciplina"])
-                st.dataframe(
-                    [
-                        {
-                            "Codigo": i["codigo"],
-                            "Descricao": i["descricao"],
-                            "Qtd.": i["quantidade"],
-                            "Unid.": i["unidade"],
-                        }
-                        for i in dados_lpu_hist["itens"]
-                    ],
-                    use_container_width=True,
-                    height=250,
-                )
-
-            if revisoes_da_proposta:
-                with st.expander(f"🔁 Ver {len(revisoes_da_proposta)} revisão(ões) desta proposta"):
-                    for r in revisoes_da_proposta:
-                        st.write(
-                            f"RV{r.numero_revisao:02d} — {r.codigo} — "
-                            f"{formatar_moeda_brl(r.valor_total) if r.valor_total is not None else '-'} "
-                            f"— {r.solicitacao_alteracao or 'sem descrição'}"
-                        )
-                        col_r1, col_r2 = st.columns(2)
-                        rev_docx = db.obter_revisao_docx(numero_sel, r.numero_revisao)
-                        rev_pdf = db.obter_revisao_pdf(numero_sel, r.numero_revisao)
-                        if rev_docx:
-                            col_r1.download_button(
-                                "Baixar revisão (.docx)",
-                                data=rev_docx[1],
-                                file_name=rev_docx[0],
-                                key=f"revdocx_{numero_sel}_{r.numero_revisao}",
-                            )
-                        if rev_pdf:
-                            col_r2.download_button(
-                                "Baixar revisão (.pdf)",
-                                data=rev_pdf[1],
-                                file_name=rev_pdf[0],
-                                key=f"revpdf_{numero_sel}_{r.numero_revisao}",
-                            )
+        st.dataframe(
+            [
+                {
+                    "Numero": h.numero,
+                    "Codigo": h.codigo,
+                    "Cliente": h.cliente,
+                    "Projeto": h.codigo_projeto,
+                    "Local": h.local,
+                    "Data": h.data_proposta,
+                    "Valor (R$)": h.valor_total,
+                    "Criado em": h.criado_em,
+                }
+                for h in historico
+            ],
+            use_container_width=True,
+        )
     else:
         st.caption("Nenhuma proposta gerada ainda.")
+
+st.subheader("Baixar proposta anterior")
+if historico:
+    opcoes = {f"{h.codigo} - {h.cliente}": h.numero for h in historico}
+    escolha = st.selectbox("Proposta", list(opcoes.keys()), key="escolha_download_historico")
+    if escolha:
+        numero_sel = opcoes[escolha]
+        col_a, col_b, col_c = st.columns(3)
+        lpu_arq = db.obter_lpu(numero_sel)
+        prop_arq = db.obter_proposta_docx(numero_sel)
+        prop_pdf_arq = db.obter_proposta_pdf(numero_sel)
+        if lpu_arq:
+            col_a.download_button(
+                "Baixar LPU original",
+                data=lpu_arq[1],
+                file_name=lpu_arq[0],
+                key=f"lpu_{numero_sel}",
+            )
+        else:
+            col_a.caption("LPU nao disponivel para essa proposta.")
+        if prop_arq:
+            col_b.download_button(
+                "Baixar proposta (.docx)",
+                data=prop_arq[1],
+                file_name=prop_arq[0],
+                key=f"prop_{numero_sel}",
+            )
+        else:
+            col_b.caption("Proposta (.docx) nao disponivel.")
+        if prop_pdf_arq:
+            col_c.download_button(
+                "Baixar proposta (.pdf)",
+                data=prop_pdf_arq[1],
+                file_name=prop_pdf_arq[0],
+                key=f"proppdf_{numero_sel}",
+            )
+        else:
+            col_c.caption("Proposta (.pdf) nao disponivel.")
+
+        if lpu_arq and st.checkbox("Visualizar itens da LPU", key=f"ver_lpu_{numero_sel}"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_hist:
+                tmp_hist.write(lpu_arq[1])
+                tmp_hist_path = tmp_hist.name
+            dados_lpu_hist = carregar_lpu(tmp_hist_path, lpu_arq[0])
+            os.unlink(tmp_hist_path)
+
+            col_h1, col_h2, col_h3 = st.columns(3)
+            col_h1.metric("Codigo do projeto", dados_lpu_hist["codigo_projeto"] or "-")
+            col_h2.metric("Local", dados_lpu_hist["local"] or "-")
+            col_h3.metric("Disciplina", dados_lpu_hist["disciplina"])
+            st.dataframe(
+                [
+                    {
+                        "Codigo": i["codigo"],
+                        "Descricao": i["descricao"],
+                        "Qtd.": i["quantidade"],
+                        "Unid.": i["unidade"],
+                    }
+                    for i in dados_lpu_hist["itens"]
+                ],
+                use_container_width=True,
+                height=250,
+            )
+
+        # Revisoes: tambem so busca a lista leve; os arquivos da revisao so
+        # sao buscados depois que uma revisao especifica e selecionada.
+        revisoes_da_proposta = db.listar_revisoes(numero_sel)
+        if revisoes_da_proposta:
+            opcoes_rev = {
+                f"RV{r.numero_revisao:02d} - {r.solicitacao_alteracao or 'sem descrição'}": r.numero_revisao
+                for r in revisoes_da_proposta
+            }
+            escolha_rev = st.selectbox(
+                f"Revisões de {escolha} ({len(revisoes_da_proposta)})",
+                list(opcoes_rev.keys()),
+                key=f"escolha_rev_{numero_sel}",
+            )
+            if escolha_rev:
+                numero_rev_sel = opcoes_rev[escolha_rev]
+                col_r1, col_r2 = st.columns(2)
+                rev_docx = db.obter_revisao_docx(numero_sel, numero_rev_sel)
+                rev_pdf = db.obter_revisao_pdf(numero_sel, numero_rev_sel)
+                if rev_docx:
+                    col_r1.download_button(
+                        "Baixar revisão (.docx)",
+                        data=rev_docx[1],
+                        file_name=rev_docx[0],
+                        key=f"revdocx_{numero_sel}_{numero_rev_sel}",
+                    )
+                else:
+                    col_r1.caption("Revisão (.docx) nao disponivel.")
+                if rev_pdf:
+                    col_r2.download_button(
+                        "Baixar revisão (.pdf)",
+                        data=rev_pdf[1],
+                        file_name=rev_pdf[0],
+                        key=f"revpdf_{numero_sel}_{numero_rev_sel}",
+                    )
+                else:
+                    col_r2.caption("Revisão (.pdf) nao disponivel.")
 
 # ---------- 1. Planilha LPU ----------
 st.header("1. Planilha LPU")
