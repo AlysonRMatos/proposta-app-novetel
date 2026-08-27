@@ -1,12 +1,17 @@
 """Monta a secao "Revisao" do documento (subdocumento docxtpl), usada
 apenas quando a proposta atual e uma revisao de uma proposta existente.
 Quando nao e revisao, o subdoc fica vazio e a secao nao aparece."""
-from docx.shared import Pt
+from docx.shared import Emu, Pt
 
 from itens_tabela import montar_tabela_itens
 
 FONT_NAME = "Trebuchet MS"
 HEADING_COLOR_HEX = "1F497D"
+
+# Mesmo recuo padrao usado no restante do documento (ex: secao "Quem
+# somos?"), para os paragrafos desta secao nao ficarem colados na margem.
+RECUO_ESQUERDO_PADRAO = Emu(540385)
+RECUO_PRIMEIRA_LINHA_PADRAO = Emu(374015)
 
 
 def montar_secao_revisao(
@@ -41,6 +46,8 @@ def montar_secao_revisao(
     def add_body(texto, bold=False, space_after=8):
         p = subdoc.add_paragraph()
         p.paragraph_format.space_after = Pt(space_after)
+        p.paragraph_format.left_indent = RECUO_ESQUERDO_PADRAO
+        p.paragraph_format.first_line_indent = RECUO_PRIMEIRA_LINHA_PADRAO
         run = p.add_run(texto)
         run.font.name = FONT_NAME
         run.font.size = Pt(11)
@@ -52,7 +59,7 @@ def montar_secao_revisao(
 
     def add_bullet(texto):
         p = subdoc.add_paragraph()
-        p.paragraph_format.left_indent = Pt(18)
+        p.paragraph_format.left_indent = RECUO_ESQUERDO_PADRAO
         p.paragraph_format.space_after = Pt(4)
         run = p.add_run(f"•  {texto}")
         run.font.name = FONT_NAME

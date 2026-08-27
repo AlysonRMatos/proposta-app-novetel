@@ -14,7 +14,18 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Emu, Pt
+
+# Recuo padrao usado nos paragrafos de texto corrido do documento original
+# (ex: secao "Quem somos?"), para os textos que adicionamos seguirem o
+# mesmo padrao visual em vez de ficarem colados na margem.
+RECUO_ESQUERDO_PADRAO = Emu(540385)
+RECUO_PRIMEIRA_LINHA_PADRAO = Emu(374015)
+
+
+def aplicar_recuo_padrao(paragraph):
+    paragraph.paragraph_format.left_indent = RECUO_ESQUERDO_PADRAO
+    paragraph.paragraph_format.first_line_indent = RECUO_PRIMEIRA_LINHA_PADRAO
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(BASE_DIR, "templates", "template_proposta.docx")
@@ -124,8 +135,10 @@ def main():
     # Secao de observacoes (itens exclusos da proposta), logo apos a tabela.
     obs_titulo = paragraphs[172].insert_paragraph_before()
     obs_titulo.add_run("Observações - itens exclusos desta proposta:").bold = True
+    aplicar_recuo_padrao(obs_titulo)
     obs_texto = paragraphs[172].insert_paragraph_before()
     obs_texto.add_run("{{ observacoes_exclusao }}")
+    aplicar_recuo_padrao(obs_texto)
 
     # Secao de Revisao (so aparece quando a proposta e uma revisao de uma
     # proposta existente; subdoc vazio nao mostra nada caso contrario).
