@@ -13,9 +13,10 @@ from itens_tabela import montar_tabela_itens
 from valor_extenso import formatar_moeda_brl, valor_por_extenso, valor_completo
 from clientes import obter_abreviacao
 from imagens_grid import montar_grid_imagens
-from counter import montar_codigo
+from counter import montar_codigo, montar_codigo_revisao
 from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
 from indice_fix import corrigir_indice
+from revisao_secao import montar_secao_revisao
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -69,6 +70,8 @@ CAMPOS_LIMPAVEIS = [
     "data_proposta",
     "observacoes_exclusao",
     "_lpu_fingerprint",
+    "escolha_revisao",
+    "solicitacao_alteracao",
 ]
 
 col_titulo, col_limpar = st.columns([4, 1])
@@ -182,6 +185,34 @@ with st.expander("Historico de propostas geradas"):
                     use_container_width=True,
                     height=250,
                 )
+
+            revisoes_da_proposta = db.listar_revisoes(numero_sel)
+            if revisoes_da_proposta:
+                st.divider()
+                st.write("**Revisões desta proposta:**")
+                for r in revisoes_da_proposta:
+                    st.write(
+                        f"RV{r.numero_revisao:02d} — {r.codigo} — "
+                        f"{formatar_moeda_brl(r.valor_total) if r.valor_total is not None else '-'} "
+                        f"— {r.solicitacao_alteracao or 'sem descrição'}"
+                    )
+                    col_r1, col_r2 = st.columns(2)
+                    rev_docx = db.obter_revisao_docx(numero_sel, r.numero_revisao)
+                    rev_pdf = db.obter_revisao_pdf(numero_sel, r.numero_revisao)
+                    if rev_docx:
+                        col_r1.download_button(
+                            "Baixar revisão (.docx)",
+                            data=rev_docx[1],
+                            file_name=rev_docx[0],
+                            key=f"revdocx_{numero_sel}_{r.numero_revisao}",
+                        )
+                    if rev_pdf:
+                        col_r2.download_button(
+                            "Baixar revisão (.pdf)",
+                            data=rev_pdf[1],
+                            file_name=rev_pdf[0],
+                            key=f"revpdf_{numero_sel}_{r.numero_revisao}",
+                        )
     else:
         st.caption("Nenhuma proposta gerada ainda.")
 
@@ -273,6 +304,86 @@ else:
     itens_selecionados = []
     st.info("Envie a planilha LPU para continuar.")
 
+
+# ---------- REVISÃO de proposta existente ----------
+def _ao_selecionar_revisao():
+    escolha = st.session_state.get("escolha_revisao")
+    if not escolha or escolha.startswith("Nenhuma"):
+        return
+    for h in db.listar_propostas():
+        if f"{h.codigo} - {h.cliente}" == escolha:
+            dados_antigos = db.obter_proposta_completa(h.numero)
+            if dados_antigos:
+                st.session_state["cliente"] = dados_antigos.cliente
+                st.session_state["abreviacao_cliente"] = dados_antigos.abreviacao_cliente
+                st.session_state["escopo_titulo"] = dados_antigos.escopo_titulo or ""
+                st.session_state["objeto"] = dados_antigos.objeto or ""
+                st.session_state["endereco"] = dados_antigos.endereco or ""
+                st.session_state["cidade"] = dados_antigos.cidade or ""
+            break
+
+
+st.header("REVISÃO")
+propostas_existentes = db.listar_propostas()
+numero_pai_revisao = None
+codigo_pai_revisao = None
+solicitacao_alteracao = ""
+itens_antigos_revisao = []
+imagens_antigas_revisao = []
+
+with st.expander("Revisar uma proposta existente (opcional)"):
+    opcoes_revisao = ["Nenhuma (proposta nova)"] + [
+        f"{h.codigo} - {h.cliente}" for h in propostas_existentes
+    ]
+    escolha_revisao = st.selectbox(
+        "Selecione a proposta original para revisar",
+        opcoes_revisao,
+        key="escolha_revisao",
+        on_change=_ao_selecionar_revisao,
+    )
+
+    if escolha_revisao and not escolha_revisao.startswith("Nenhuma"):
+        for h in propostas_existentes:
+            if f"{h.codigo} - {h.cliente}" == escolha_revisao:
+                numero_pai_revisao = h.numero
+                codigo_pai_revisao = h.codigo
+                break
+
+    if numero_pai_revisao is not None:
+        proximo_numero_revisao_preview = db.proximo_numero_revisao(numero_pai_revisao)
+        st.info(
+            f"Cliente, escopo, objeto, endereço, cidade e fotos de **{codigo_pai_revisao}** "
+            f"já foram puxados abaixo. Esta proposta será registrada como revisão "
+            f"**RV{proximo_numero_revisao_preview:02d}** de **{codigo_pai_revisao}**."
+        )
+        solicitacao_alteracao = st.text_area(
+            "O que foi solicitado alterar nesta revisão? (fica registrado no documento e no banco)",
+            key="solicitacao_alteracao",
+            height=80,
+        )
+
+        lpu_antiga = db.obter_lpu(numero_pai_revisao)
+        if lpu_antiga:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_old:
+                tmp_old.write(lpu_antiga[1])
+                tmp_old_path = tmp_old.name
+            dados_lpu_antiga = carregar_lpu(tmp_old_path, lpu_antiga[0])
+            os.unlink(tmp_old_path)
+            itens_antigos_revisao = dados_lpu_antiga["itens"]
+            st.caption(
+                f"LPU anterior ({lpu_antiga[0]}): {len(itens_antigos_revisao)} itens — "
+                "vão aparecer como referência na seção 'Revisão' do documento."
+            )
+        else:
+            st.caption("Não há LPU salva na proposta original para usar como referência.")
+
+        imagens_antigas_revisao = db.obter_imagens_proposta(numero_pai_revisao)
+        if imagens_antigas_revisao:
+            st.caption(
+                f"{len(imagens_antigas_revisao)} foto(s) da proposta anterior serão "
+                "reaproveitadas (além de qualquer foto nova que você anexar abaixo)."
+            )
+
 # ---------- 2. Dados da proposta ----------
 st.header("2. Dados da proposta")
 col1, col2 = st.columns(2)
@@ -346,25 +457,56 @@ if gerar:
         st.error("Preencha a abreviação do cliente.")
         st.stop()
 
-    numero_proposta = db.proximo_numero_atomic()
-    codigo_proposta = montar_codigo(abreviacao_cliente, numero_proposta, data_proposta)
+    revisao_ativa = numero_pai_revisao is not None
+
+    if revisao_ativa:
+        numero_revisao_atual = db.proximo_numero_revisao(numero_pai_revisao)
+        codigo_proposta = montar_codigo_revisao(
+            abreviacao_cliente, numero_pai_revisao, numero_revisao_atual, data_proposta
+        )
+    else:
+        numero_proposta = db.proximo_numero_atomic()
+        codigo_proposta = montar_codigo(abreviacao_cliente, numero_proposta, data_proposta)
 
     tpl = DocxTemplate(TEMPLATE_PATH)
 
-    # Imagens: monta um grid padronizado com todas as imagens anexadas
-    subdoc = tpl.new_subdoc()
+    # Imagens: fotos da proposta anterior (se for revisao) + as novas anexadas,
+    # em um unico grid padronizado. Tambem guarda (nome, bytes) de tudo para
+    # salvar no banco.
+    imagens_para_salvar = []
     caminhos_temp = []
+    for nome_antiga, bytes_antiga in imagens_antigas_revisao:
+        sufixo = os.path.splitext(nome_antiga)[1] or ".png"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=sufixo) as tmp_img:
+            tmp_img.write(bytes_antiga)
+            caminhos_temp.append(tmp_img.name)
+        imagens_para_salvar.append((nome_antiga, bytes_antiga))
     if imagens_upload:
         for img in imagens_upload:
+            dados_img = bytes(img.getbuffer())
             with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(img.name)[1]) as tmp_img:
-                tmp_img.write(img.getbuffer())
+                tmp_img.write(dados_img)
                 caminhos_temp.append(tmp_img.name)
+            imagens_para_salvar.append((img.name, dados_img))
+
+    subdoc = tpl.new_subdoc()
     montar_grid_imagens(subdoc, caminhos_temp)
     for caminho in caminhos_temp:
         os.unlink(caminho)
 
     tabela_subdoc = tpl.new_subdoc()
     montar_tabela_itens(tabela_subdoc, itens_selecionados)
+
+    secao_revisao_subdoc = tpl.new_subdoc()
+    montar_secao_revisao(
+        secao_revisao_subdoc,
+        ativa=revisao_ativa,
+        codigo_pai=codigo_pai_revisao,
+        numero_revisao=numero_revisao_atual if revisao_ativa else None,
+        solicitacao_alteracao=solicitacao_alteracao,
+        itens_antigos=itens_antigos_revisao,
+        itens_novos=itens_selecionados,
+    )
 
     context = {
         "codigo_proposta": codigo_proposta,
@@ -382,6 +524,7 @@ if gerar:
         "prazo_execucao": prazo_execucao,
         "valor_total_extenso": valor_total_extenso,
         "imagens": subdoc,
+        "secao_revisao": secao_revisao_subdoc,
     }
 
     tpl.render(context)
@@ -408,14 +551,19 @@ if gerar:
     else:
         st.info("Conversor de PDF nao disponivel neste ambiente; apenas o .docx foi gerado.")
 
-    db.salvar_proposta(
-        numero=numero_proposta,
+    campos_comuns = dict(
         abreviacao_cliente=abreviacao_cliente,
         cliente=cliente,
         data_proposta=data_proposta,
         codigo_projeto=dados_lpu["codigo_projeto"],
         local=dados_lpu["local"],
         valor_total=dados_lpu["valor_total_bdi"],
+        escopo_titulo=escopo_titulo,
+        objeto=objeto,
+        endereco=endereco,
+        cidade=cidade,
+        prazo_execucao=prazo_execucao,
+        observacoes_exclusao=observacoes_exclusao,
         lpu_nome_arquivo=lpu_file.name,
         lpu_arquivo=lpu_bytes,
         proposta_nome_arquivo=nome_saida,
@@ -423,6 +571,18 @@ if gerar:
         proposta_pdf_nome_arquivo=nome_saida_pdf,
         proposta_pdf_arquivo=proposta_pdf_bytes,
     )
+
+    if revisao_ativa:
+        db.salvar_revisao(
+            numero_pai=numero_pai_revisao,
+            numero_revisao=numero_revisao_atual,
+            solicitacao_alteracao=solicitacao_alteracao,
+            **campos_comuns,
+        )
+        db.salvar_imagens_revisao(numero_pai_revisao, numero_revisao_atual, imagens_para_salvar)
+    else:
+        db.salvar_proposta(numero=numero_proposta, **campos_comuns)
+        db.salvar_imagens_proposta(numero_proposta, imagens_para_salvar)
 
     st.success(f"Proposta gerada: {codigo_proposta}")
     col_docx, col_pdf = st.columns(2)

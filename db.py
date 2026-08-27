@@ -1,7 +1,8 @@
 """
-Banco de dados de propostas: guarda o historico (incluindo os arquivos da
-LPU enviada e da proposta .docx gerada) e controla o numero sequencial
-global de forma atomica (seguro para multiplos usuarios simultaneos).
+Banco de dados de propostas: guarda o historico completo (arquivos, fotos e
+todos os campos usados para gerar cada proposta) e controla o numero
+sequencial global de forma atomica (seguro para multiplos usuarios
+simultaneos). Tambem guarda as revisoes de propostas existentes.
 
 Usa Postgres quando DATABASE_URL esta configurada (producao/online) e
 cai para um arquivo SQLite local quando nao esta (desenvolvimento).
@@ -12,7 +13,7 @@ from datetime import datetime, timezone
 import streamlit as st
 from sqlalchemy import create_engine, text
 
-from counter import montar_codigo
+from counter import montar_codigo, montar_codigo_revisao
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _engine = None
@@ -51,12 +52,33 @@ def status_backend() -> dict:
     }
 
 
-def _adicionar_coluna_se_necessario(engine, coluna: str, tipo: str):
+def _adicionar_coluna_se_necessario(engine, tabela: str, coluna: str, tipo: str):
     try:
         with engine.begin() as conn:
-            conn.execute(text(f"ALTER TABLE propostas ADD COLUMN {coluna} {tipo}"))
+            conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
     except Exception:
         pass  # coluna ja existe
+
+
+# Campos "de formulario" que precisam ficar salvos para uma revisao futura
+# poder puxar tudo de volta. Compartilhado entre propostas e revisoes.
+_CAMPOS_FORMULARIO = [
+    ("escopo_titulo", "TEXT"),
+    ("objeto", "TEXT"),
+    ("endereco", "TEXT"),
+    ("cidade", "TEXT"),
+    ("prazo_execucao", "TEXT"),
+    ("observacoes_exclusao", "TEXT"),
+]
+
+_CAMPOS_ARQUIVOS = [
+    ("lpu_nome_arquivo", "TEXT"),
+    ("lpu_arquivo", "BYTEA"),
+    ("proposta_nome_arquivo", "TEXT"),
+    ("proposta_arquivo", "BYTEA"),
+    ("proposta_pdf_nome_arquivo", "TEXT"),
+    ("proposta_pdf_arquivo", "BYTEA"),
+]
 
 
 def _criar_tabelas(engine):
@@ -94,16 +116,58 @@ def _criar_tabelas(engine):
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS proposta_imagens (
+                    numero INTEGER NOT NULL,
+                    ordem INTEGER NOT NULL,
+                    nome_arquivo TEXT,
+                    arquivo BYTEA,
+                    PRIMARY KEY (numero, ordem)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS revisoes (
+                    numero_pai INTEGER NOT NULL,
+                    numero_revisao INTEGER NOT NULL,
+                    codigo TEXT NOT NULL UNIQUE,
+                    cliente TEXT NOT NULL,
+                    abreviacao_cliente TEXT NOT NULL,
+                    codigo_projeto TEXT,
+                    local TEXT,
+                    data_proposta TEXT NOT NULL,
+                    valor_total DOUBLE PRECISION,
+                    solicitacao_alteracao TEXT,
+                    criado_em TEXT NOT NULL,
+                    PRIMARY KEY (numero_pai, numero_revisao)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS revisao_imagens (
+                    numero_pai INTEGER NOT NULL,
+                    numero_revisao INTEGER NOT NULL,
+                    ordem INTEGER NOT NULL,
+                    nome_arquivo TEXT,
+                    arquivo BYTEA,
+                    PRIMARY KEY (numero_pai, numero_revisao, ordem)
+                )
+                """
+            )
+        )
 
-    for coluna, tipo in [
-        ("lpu_nome_arquivo", "TEXT"),
-        ("lpu_arquivo", "BYTEA"),
-        ("proposta_nome_arquivo", "TEXT"),
-        ("proposta_arquivo", "BYTEA"),
-        ("proposta_pdf_nome_arquivo", "TEXT"),
-        ("proposta_pdf_arquivo", "BYTEA"),
-    ]:
-        _adicionar_coluna_se_necessario(engine, coluna, tipo)
+    for coluna, tipo in _CAMPOS_ARQUIVOS + _CAMPOS_FORMULARIO:
+        _adicionar_coluna_se_necessario(engine, "propostas", coluna, tipo)
+    for coluna, tipo in _CAMPOS_ARQUIVOS + _CAMPOS_FORMULARIO:
+        _adicionar_coluna_se_necessario(engine, "revisoes", coluna, tipo)
 
 
 def _get_engine():
@@ -148,6 +212,12 @@ def salvar_proposta(
     codigo_projeto: str,
     local: str,
     valor_total: float,
+    escopo_titulo: str = None,
+    objeto: str = None,
+    endereco: str = None,
+    cidade: str = None,
+    prazo_execucao: str = None,
+    observacoes_exclusao: str = None,
     lpu_nome_arquivo: str = None,
     lpu_arquivo: bytes = None,
     proposta_nome_arquivo: str = None,
@@ -156,7 +226,9 @@ def salvar_proposta(
     proposta_pdf_arquivo: bytes = None,
 ) -> str:
     """Grava o registro completo da proposta (numero ja reservado
-    previamente com proximo_numero_atomic), incluindo os arquivos."""
+    previamente com proximo_numero_atomic), incluindo os arquivos e todos
+    os campos do formulario (necessarios para uma revisao futura poder
+    puxar tudo de volta)."""
     codigo = montar_codigo(abreviacao_cliente, numero, data_proposta)
     engine = _get_engine()
     with engine.begin() as conn:
@@ -166,11 +238,15 @@ def salvar_proposta(
                 INSERT INTO propostas (
                     numero, codigo, cliente, abreviacao_cliente,
                     codigo_projeto, local, data_proposta, valor_total, criado_em,
+                    escopo_titulo, objeto, endereco, cidade, prazo_execucao,
+                    observacoes_exclusao,
                     lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
                     proposta_pdf_nome_arquivo, proposta_pdf_arquivo
                 ) VALUES (
                     :numero, :codigo, :cliente, :abrev,
                     :codigo_projeto, :local, :data_proposta, :valor_total, :criado_em,
+                    :escopo_titulo, :objeto, :endereco, :cidade, :prazo_execucao,
+                    :observacoes_exclusao,
                     :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
                     :prop_pdf_nome, :prop_pdf_arq
                 )
@@ -186,6 +262,12 @@ def salvar_proposta(
                 "data_proposta": data_proposta.strftime("%Y-%m-%d"),
                 "valor_total": valor_total,
                 "criado_em": datetime.now(timezone.utc).isoformat(),
+                "escopo_titulo": escopo_titulo,
+                "objeto": objeto,
+                "endereco": endereco,
+                "cidade": cidade,
+                "prazo_execucao": prazo_execucao,
+                "observacoes_exclusao": observacoes_exclusao,
                 "lpu_nome": lpu_nome_arquivo,
                 "lpu_arq": lpu_arquivo,
                 "prop_nome": proposta_nome_arquivo,
@@ -195,6 +277,35 @@ def salvar_proposta(
             },
         )
     return codigo
+
+
+def salvar_imagens_proposta(numero: int, imagens: list):
+    """imagens: lista de (nome_arquivo, bytes)."""
+    if not imagens:
+        return
+    engine = _get_engine()
+    with engine.begin() as conn:
+        for ordem, (nome, dados) in enumerate(imagens):
+            conn.execute(
+                text(
+                    "INSERT INTO proposta_imagens (numero, ordem, nome_arquivo, arquivo) "
+                    "VALUES (:n, :o, :nome, :dados)"
+                ),
+                {"n": numero, "o": ordem, "nome": nome, "dados": dados},
+            )
+
+
+def obter_imagens_proposta(numero: int) -> list:
+    engine = _get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT nome_arquivo, arquivo FROM proposta_imagens "
+                "WHERE numero = :n ORDER BY ordem"
+            ),
+            {"n": numero},
+        ).fetchall()
+        return [(r[0], bytes(r[1])) for r in rows]
 
 
 def listar_propostas(limite: int = 100):
@@ -213,6 +324,25 @@ def listar_propostas(limite: int = 100):
             {"lim": limite},
         ).fetchall()
         return rows
+
+
+def obter_proposta_completa(numero: int):
+    """Retorna todos os campos de formulario de uma proposta (para uma
+    revisao puxar de volta), como um mapeamento (Row do SQLAlchemy)."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT numero, codigo, cliente, abreviacao_cliente, codigo_projeto,
+                       local, valor_total, escopo_titulo, objeto, endereco, cidade,
+                       prazo_execucao
+                FROM propostas WHERE numero = :n
+                """
+            ),
+            {"n": numero},
+        ).fetchone()
+        return row
 
 
 def obter_lpu(numero: int):
@@ -254,8 +384,162 @@ def obter_proposta_pdf(numero: int):
         return None
 
 
+# ---------------------------------------------------------------------
+# Revisoes de propostas existentes
+# ---------------------------------------------------------------------
+
+def proximo_numero_revisao(numero_pai: int) -> int:
+    """Proximo numero de revisao (RV01, RV02, ...) para essa proposta pai."""
+    engine = _get_engine()
+    with engine.connect() as conn:
+        valor = conn.execute(
+            text("SELECT COALESCE(MAX(numero_revisao), 0) FROM revisoes WHERE numero_pai = :p"),
+            {"p": numero_pai},
+        ).scalar()
+        return (valor or 0) + 1
+
+
+def salvar_revisao(
+    numero_pai: int,
+    numero_revisao: int,
+    abreviacao_cliente: str,
+    cliente: str,
+    data_proposta,
+    codigo_projeto: str,
+    local: str,
+    valor_total: float,
+    solicitacao_alteracao: str = None,
+    escopo_titulo: str = None,
+    objeto: str = None,
+    endereco: str = None,
+    cidade: str = None,
+    prazo_execucao: str = None,
+    observacoes_exclusao: str = None,
+    lpu_nome_arquivo: str = None,
+    lpu_arquivo: bytes = None,
+    proposta_nome_arquivo: str = None,
+    proposta_arquivo: bytes = None,
+    proposta_pdf_nome_arquivo: str = None,
+    proposta_pdf_arquivo: bytes = None,
+) -> str:
+    codigo = montar_codigo_revisao(abreviacao_cliente, numero_pai, numero_revisao, data_proposta)
+    engine = _get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO revisoes (
+                    numero_pai, numero_revisao, codigo, cliente, abreviacao_cliente,
+                    codigo_projeto, local, data_proposta, valor_total,
+                    solicitacao_alteracao, criado_em,
+                    escopo_titulo, objeto, endereco, cidade, prazo_execucao,
+                    observacoes_exclusao,
+                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
+                    proposta_pdf_nome_arquivo, proposta_pdf_arquivo
+                ) VALUES (
+                    :numero_pai, :numero_revisao, :codigo, :cliente, :abrev,
+                    :codigo_projeto, :local, :data_proposta, :valor_total,
+                    :solicitacao, :criado_em,
+                    :escopo_titulo, :objeto, :endereco, :cidade, :prazo_execucao,
+                    :observacoes_exclusao,
+                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
+                    :prop_pdf_nome, :prop_pdf_arq
+                )
+                """
+            ),
+            {
+                "numero_pai": numero_pai,
+                "numero_revisao": numero_revisao,
+                "codigo": codigo,
+                "cliente": cliente,
+                "abrev": abreviacao_cliente,
+                "codigo_projeto": codigo_projeto,
+                "local": local,
+                "data_proposta": data_proposta.strftime("%Y-%m-%d"),
+                "valor_total": valor_total,
+                "solicitacao": solicitacao_alteracao,
+                "criado_em": datetime.now(timezone.utc).isoformat(),
+                "escopo_titulo": escopo_titulo,
+                "objeto": objeto,
+                "endereco": endereco,
+                "cidade": cidade,
+                "prazo_execucao": prazo_execucao,
+                "observacoes_exclusao": observacoes_exclusao,
+                "lpu_nome": lpu_nome_arquivo,
+                "lpu_arq": lpu_arquivo,
+                "prop_nome": proposta_nome_arquivo,
+                "prop_arq": proposta_arquivo,
+                "prop_pdf_nome": proposta_pdf_nome_arquivo,
+                "prop_pdf_arq": proposta_pdf_arquivo,
+            },
+        )
+    return codigo
+
+
+def salvar_imagens_revisao(numero_pai: int, numero_revisao: int, imagens: list):
+    if not imagens:
+        return
+    engine = _get_engine()
+    with engine.begin() as conn:
+        for ordem, (nome, dados) in enumerate(imagens):
+            conn.execute(
+                text(
+                    "INSERT INTO revisao_imagens (numero_pai, numero_revisao, ordem, nome_arquivo, arquivo) "
+                    "VALUES (:p, :r, :o, :nome, :dados)"
+                ),
+                {"p": numero_pai, "r": numero_revisao, "o": ordem, "nome": nome, "dados": dados},
+            )
+
+
+def listar_revisoes(numero_pai: int):
+    engine = _get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT numero_revisao, codigo, cliente, valor_total,
+                       solicitacao_alteracao, criado_em
+                FROM revisoes WHERE numero_pai = :p
+                ORDER BY numero_revisao DESC
+                """
+            ),
+            {"p": numero_pai},
+        ).fetchall()
+        return rows
+
+
+def obter_revisao_docx(numero_pai: int, numero_revisao: int):
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT proposta_nome_arquivo, proposta_arquivo FROM revisoes "
+                "WHERE numero_pai = :p AND numero_revisao = :r"
+            ),
+            {"p": numero_pai, "r": numero_revisao},
+        ).fetchone()
+        if row and row[1] is not None:
+            return row[0], bytes(row[1])
+        return None
+
+
+def obter_revisao_pdf(numero_pai: int, numero_revisao: int):
+    engine = _get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT proposta_pdf_nome_arquivo, proposta_pdf_arquivo FROM revisoes "
+                "WHERE numero_pai = :p AND numero_revisao = :r"
+            ),
+            {"p": numero_pai, "r": numero_revisao},
+        ).fetchone()
+        if row and row[1] is not None:
+            return row[0], bytes(row[1])
+        return None
+
+
 def resetar_banco(confirmar: bool = False):
-    """Apaga todas as propostas e zera o contador.
+    """Apaga todas as propostas/revisoes e zera o contador.
 
     Trava de seguranca: se o banco em uso for o Postgres de producao,
     exige confirmar=True explicitamente. Evita zerar dados reais por
@@ -269,5 +553,8 @@ def resetar_banco(confirmar: bool = False):
 
     engine = _get_engine()
     with engine.begin() as conn:
+        conn.execute(text("DELETE FROM revisao_imagens"))
+        conn.execute(text("DELETE FROM revisoes"))
+        conn.execute(text("DELETE FROM proposta_imagens"))
         conn.execute(text("DELETE FROM propostas"))
         conn.execute(text("UPDATE contador SET valor = 0 WHERE id = 1"))

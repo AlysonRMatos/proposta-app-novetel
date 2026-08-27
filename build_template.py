@@ -127,6 +127,11 @@ def main():
     obs_texto = paragraphs[172].insert_paragraph_before()
     obs_texto.add_run("{{ observacoes_exclusao }}")
 
+    # Secao de Revisao (so aparece quando a proposta e uma revisao de uma
+    # proposta existente; subdoc vazio nao mostra nada caso contrario).
+    revisao_p = paragraphs[172].insert_paragraph_before()
+    revisao_p.add_run("{{p secao_revisao}}")
+
     remove_paragraph(paragraphs[172])
     remove_paragraph(paragraphs[174])
     remove_paragraph(paragraphs[176])
