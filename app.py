@@ -72,6 +72,7 @@ CAMPOS_LIMPAVEIS = [
     "_lpu_fingerprint",
     "escolha_revisao",
     "solicitacao_alteracao",
+    "_revisao_carregada",
 ]
 
 col_titulo, col_limpar = st.columns([4, 1])
@@ -306,23 +307,6 @@ else:
 
 
 # ---------- REVISÃO de proposta existente ----------
-def _ao_selecionar_revisao():
-    escolha = st.session_state.get("escolha_revisao")
-    if not escolha or escolha.startswith("Nenhuma"):
-        return
-    for h in db.listar_propostas():
-        if f"{h.codigo} - {h.cliente}" == escolha:
-            dados_antigos = db.obter_proposta_completa(h.numero)
-            if dados_antigos:
-                st.session_state["cliente"] = dados_antigos.cliente
-                st.session_state["abreviacao_cliente"] = dados_antigos.abreviacao_cliente
-                st.session_state["escopo_titulo"] = dados_antigos.escopo_titulo or ""
-                st.session_state["objeto"] = dados_antigos.objeto or ""
-                st.session_state["endereco"] = dados_antigos.endereco or ""
-                st.session_state["cidade"] = dados_antigos.cidade or ""
-            break
-
-
 st.header("REVISÃO")
 propostas_existentes = db.listar_propostas()
 numero_pai_revisao = None
@@ -339,8 +323,26 @@ with st.expander("Revisar uma proposta existente (opcional)"):
         "Selecione a proposta original para revisar",
         opcoes_revisao,
         key="escolha_revisao",
-        on_change=_ao_selecionar_revisao,
     )
+
+    # Mesmo padrao ja comprovado usado para a LPU: detecta mudanca de
+    # selecao e forca um rerun, em vez de depender de on_change (que se
+    # mostrou pouco confiavel para atualizar outros widgets neste caso).
+    if st.session_state.get("_revisao_carregada") != escolha_revisao:
+        st.session_state["_revisao_carregada"] = escolha_revisao
+        if escolha_revisao and not escolha_revisao.startswith("Nenhuma"):
+            for h in propostas_existentes:
+                if f"{h.codigo} - {h.cliente}" == escolha_revisao:
+                    dados_antigos = db.obter_proposta_completa(h.numero)
+                    if dados_antigos:
+                        st.session_state["cliente"] = dados_antigos.cliente
+                        st.session_state["abreviacao_cliente"] = dados_antigos.abreviacao_cliente
+                        st.session_state["escopo_titulo"] = dados_antigos.escopo_titulo or ""
+                        st.session_state["objeto"] = dados_antigos.objeto or ""
+                        st.session_state["endereco"] = dados_antigos.endereco or ""
+                        st.session_state["cidade"] = dados_antigos.cidade or ""
+                    break
+        st.rerun()
 
     if escolha_revisao and not escolha_revisao.startswith("Nenhuma"):
         for h in propostas_existentes:
