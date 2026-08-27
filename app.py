@@ -106,31 +106,23 @@ else:
 
 st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero():04d}**")
 
-with st.expander("Historico de propostas geradas"):
-    historico = db.listar_propostas()
-    if historico:
-        st.dataframe(
-            [
-                {
-                    "Numero": h.numero,
-                    "Codigo": h.codigo,
-                    "Cliente": h.cliente,
-                    "Projeto": h.codigo_projeto,
-                    "Local": h.local,
-                    "Data": h.data_proposta,
-                    "Valor (R$)": h.valor_total,
-                    "Criado em": h.criado_em,
-                }
-                for h in historico
-            ],
-            use_container_width=True,
-        )
-        st.divider()
-        st.write("**Baixar arquivos de uma proposta anterior**")
-        opcoes = {f"{h.codigo} - {h.cliente}": h.numero for h in historico}
-        escolha = st.selectbox("Proposta", list(opcoes.keys()))
-        if escolha:
-            numero_sel = opcoes[escolha]
+st.subheader("Histórico de propostas geradas")
+historico = db.listar_propostas()
+if historico:
+    for h in historico:
+        revisoes_da_proposta = db.listar_revisoes(h.numero)
+        label = f"{h.codigo} — {h.cliente}"
+        if h.valor_total is not None:
+            label += f" — {formatar_moeda_brl(h.valor_total)}"
+        if revisoes_da_proposta:
+            label += f"  🔁 {len(revisoes_da_proposta)} revisão(ões)"
+
+        with st.expander(label):
+            st.caption(
+                f"Projeto: {h.codigo_projeto or '-'} | Local: {h.local or '-'} | "
+                f"Data: {h.data_proposta} | Criado em: {h.criado_em}"
+            )
+            numero_sel = h.numero
             col_a, col_b, col_c = st.columns(3)
             lpu_arq = db.obter_lpu(numero_sel)
             prop_arq = db.obter_proposta_docx(numero_sel)
@@ -188,7 +180,6 @@ with st.expander("Historico de propostas geradas"):
                     height=250,
                 )
 
-            revisoes_da_proposta = db.listar_revisoes(numero_sel)
             if revisoes_da_proposta:
                 st.divider()
                 st.write("**Revisões desta proposta:**")
@@ -215,8 +206,8 @@ with st.expander("Historico de propostas geradas"):
                             file_name=rev_pdf[0],
                             key=f"revpdf_{numero_sel}_{r.numero_revisao}",
                         )
-    else:
-        st.caption("Nenhuma proposta gerada ainda.")
+else:
+    st.caption("Nenhuma proposta gerada ainda.")
 
 # ---------- 1. Planilha LPU ----------
 st.header("1. Planilha LPU")
