@@ -362,22 +362,39 @@ with st.expander("Revisar uma proposta existente (opcional)"):
             height=80,
         )
 
-        lpu_antiga = db.obter_lpu(numero_pai_revisao)
+        try:
+            lpu_antiga = db.obter_lpu(numero_pai_revisao)
+        except Exception as e:
+            lpu_antiga = None
+            st.warning(f"Não foi possível recuperar a LPU da proposta original: {e}")
+
         if lpu_antiga:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_old:
-                tmp_old.write(lpu_antiga[1])
-                tmp_old_path = tmp_old.name
-            dados_lpu_antiga = carregar_lpu(tmp_old_path, lpu_antiga[0])
-            os.unlink(tmp_old_path)
-            itens_antigos_revisao = dados_lpu_antiga["itens"]
-            st.caption(
-                f"LPU anterior ({lpu_antiga[0]}): {len(itens_antigos_revisao)} itens — "
-                "vão aparecer como referência na seção 'Revisão' do documento."
-            )
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_old:
+                    tmp_old.write(lpu_antiga[1])
+                    tmp_old_path = tmp_old.name
+                dados_lpu_antiga = carregar_lpu(tmp_old_path, lpu_antiga[0])
+                os.unlink(tmp_old_path)
+                itens_antigos_revisao = dados_lpu_antiga["itens"]
+                st.caption(
+                    f"LPU anterior ({lpu_antiga[0]}): {len(itens_antigos_revisao)} itens — "
+                    "vão aparecer como referência na seção 'Revisão' do documento."
+                )
+            except Exception as e:
+                itens_antigos_revisao = []
+                st.warning(
+                    f"Não foi possível ler os itens da LPU anterior como referência "
+                    f"(o restante dos dados foi puxado normalmente): {e}"
+                )
         else:
             st.caption("Não há LPU salva na proposta original para usar como referência.")
 
-        imagens_antigas_revisao = db.obter_imagens_proposta(numero_pai_revisao)
+        try:
+            imagens_antigas_revisao = db.obter_imagens_proposta(numero_pai_revisao)
+        except Exception as e:
+            imagens_antigas_revisao = []
+            st.warning(f"Não foi possível recuperar as fotos da proposta original: {e}")
+
         if imagens_antigas_revisao:
             st.caption(
                 f"{len(imagens_antigas_revisao)} foto(s) da proposta anterior serão "
