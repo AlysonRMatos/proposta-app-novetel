@@ -128,6 +128,47 @@ with st.expander("Histórico de propostas geradas"):
             ],
             use_container_width=True,
         )
+        # So busca a lista (leve, sem blobs) de revisoes de cada proposta,
+        # e so busca os ARQUIVOS de uma revisao quando a proposta realmente
+        # tem alguma (subconjunto pequeno) -- mantem o restante do historico
+        # rapido mesmo com muitas propostas.
+        propostas_com_revisao = [
+            (h, db.listar_revisoes(h.numero)) for h in historico
+        ]
+        propostas_com_revisao = [(h, revs) for h, revs in propostas_com_revisao if revs]
+
+        if propostas_com_revisao:
+            st.divider()
+            st.write("**Propostas com revisões:**")
+            for h, revs in propostas_com_revisao:
+                with st.expander(f"🔁 {h.codigo} — {h.cliente} ({len(revs)} revisão(ões))"):
+                    for r in revs:
+                        st.write(
+                            f"RV{r.numero_revisao:02d} — {r.codigo} — "
+                            f"{formatar_moeda_brl(r.valor_total) if r.valor_total is not None else '-'} "
+                            f"— {r.solicitacao_alteracao or 'sem descrição'}"
+                        )
+                        col_r1, col_r2 = st.columns(2)
+                        rev_docx = db.obter_revisao_docx(h.numero, r.numero_revisao)
+                        rev_pdf = db.obter_revisao_pdf(h.numero, r.numero_revisao)
+                        if rev_docx:
+                            col_r1.download_button(
+                                "Baixar revisão (.docx)",
+                                data=rev_docx[1],
+                                file_name=rev_docx[0],
+                                key=f"hist_revdocx_{h.numero}_{r.numero_revisao}",
+                            )
+                        else:
+                            col_r1.caption("Revisão (.docx) nao disponivel.")
+                        if rev_pdf:
+                            col_r2.download_button(
+                                "Baixar revisão (.pdf)",
+                                data=rev_pdf[1],
+                                file_name=rev_pdf[0],
+                                key=f"hist_revpdf_{h.numero}_{r.numero_revisao}",
+                            )
+                        else:
+                            col_r2.caption("Revisão (.pdf) nao disponivel.")
     else:
         st.caption("Nenhuma proposta gerada ainda.")
 
