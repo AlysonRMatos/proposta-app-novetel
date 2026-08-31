@@ -106,6 +106,56 @@ else:
 
 st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero():04d}**")
 
+# ---------- Download pendente da ultima proposta gerada ----------
+# LPU, .docx e .pdf nao ficam guardados no banco (so os dados). Enquanto o
+# usuario nao baixar os dois arquivos da proposta que acabou de gerar, eles
+# so existem aqui -- por isso o aviso fica fixo no topo ate confirmar.
+pendente = st.session_state.get("pendente_download")
+if pendente:
+    st.warning(
+        f"⚠️ Proposta **{pendente['codigo']}** gerada — baixe o **.docx** e o **.pdf** "
+        "agora. Os arquivos não ficam salvos no servidor; se sair sem baixar, "
+        "não tem como recuperá-los depois (só os dados ficam registrados)."
+    )
+    col_pend_docx, col_pend_pdf = st.columns(2)
+    if col_pend_docx.download_button(
+        "Baixar proposta (.docx)",
+        data=pendente["docx_bytes"],
+        file_name=pendente["docx_nome"],
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        key="pendente_download_docx",
+    ):
+        st.session_state["pendente_download"]["docx_baixado"] = True
+
+    if pendente["pdf_bytes"]:
+        if col_pend_pdf.download_button(
+            "Baixar proposta (.pdf)",
+            data=pendente["pdf_bytes"],
+            file_name=pendente["pdf_nome"],
+            mime="application/pdf",
+            key="pendente_download_pdf",
+        ):
+            st.session_state["pendente_download"]["pdf_baixado"] = True
+    else:
+        col_pend_pdf.caption("PDF não disponível para esta proposta.")
+        st.session_state["pendente_download"]["pdf_baixado"] = True
+
+    pdte = st.session_state["pendente_download"]
+    if pdte["docx_baixado"] and pdte["pdf_baixado"]:
+        st.success("Arquivos baixados. Liberando os campos para a próxima proposta...")
+        for campo in CAMPOS_LIMPAVEIS:
+            st.session_state.pop(campo, None)
+        st.session_state["uploader_version"] += 1
+        st.session_state.pop("pendente_download", None)
+        st.rerun()
+    else:
+        faltando = []
+        if not pdte["docx_baixado"]:
+            faltando.append(".docx")
+        if not pdte["pdf_baixado"]:
+            faltando.append(".pdf")
+        st.caption(f"Ainda falta baixar: {', '.join(faltando)}.")
+
 historico = db.listar_propostas()
 
 with st.expander("Histórico de propostas geradas"):
@@ -511,7 +561,16 @@ observacoes_exclusao = st.text_area(
 
 # ---------- Gerar ----------
 st.header("5. Gerar proposta")
-gerar = st.button("Gerar Proposta (.docx)", type="primary", disabled=(dados_lpu is None))
+if st.session_state.get("pendente_download"):
+    st.caption(
+        "Baixe o .docx e o .pdf da proposta gerada (aviso no topo da página) "
+        "antes de gerar uma nova."
+    )
+gerar = st.button(
+    "Gerar Proposta (.docx)",
+    type="primary",
+    disabled=(dados_lpu is None) or bool(st.session_state.get("pendente_download")),
+)
 
 if gerar:
     if not cliente:
@@ -631,12 +690,13 @@ if gerar:
         cidade=cidade,
         prazo_execucao=prazo_execucao,
         observacoes_exclusao=observacoes_exclusao,
+        # A partir daqui, so o NOME dos arquivos fica registrado -- o
+        # conteudo (LPU, .docx, .pdf) nao e mais guardado no banco, pra nao
+        # lotar o espaco. Por isso o usuario precisa baixar os arquivos
+        # logo apos gerar (ver bloco de "pendente_download" abaixo).
         lpu_nome_arquivo=lpu_file.name,
-        lpu_arquivo=lpu_bytes,
         proposta_nome_arquivo=nome_saida,
-        proposta_arquivo=proposta_bytes,
         proposta_pdf_nome_arquivo=nome_saida_pdf,
-        proposta_pdf_arquivo=proposta_pdf_bytes,
     )
 
     if revisao_ativa:
@@ -652,18 +712,17 @@ if gerar:
         db.salvar_proposta(numero=numero_proposta, **campos_comuns)
         db.salvar_imagens_proposta(numero_proposta, imagens_para_salvar)
 
-    st.success(f"Proposta gerada: {codigo_proposta}")
-    col_docx, col_pdf = st.columns(2)
-    col_docx.download_button(
-        "Baixar proposta (.docx)",
-        data=proposta_bytes,
-        file_name=nome_saida,
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
-    if proposta_pdf_bytes:
-        col_pdf.download_button(
-            "Baixar proposta (.pdf)",
-            data=proposta_pdf_bytes,
-            file_name=nome_saida_pdf,
-            mime="application/pdf",
-        )
+    # Os arquivos NAO ficam guardados no banco -- so existem aqui, em
+    # memoria, ate a pagina fechar. Guarda em session_state e so libera
+    # gerar outra proposta / limpa os campos depois que os dois forem
+    # baixados, pra garantir que o usuario nao perca o resultado.
+    st.session_state["pendente_download"] = {
+        "codigo": codigo_proposta,
+        "docx_bytes": proposta_bytes,
+        "docx_nome": nome_saida,
+        "pdf_bytes": proposta_pdf_bytes,
+        "pdf_nome": nome_saida_pdf,
+        "docx_baixado": False,
+        "pdf_baixado": False,
+    }
+    st.rerun()

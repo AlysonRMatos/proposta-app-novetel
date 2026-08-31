@@ -563,3 +563,39 @@ def resetar_banco(confirmar: bool = False):
         conn.execute(text("DELETE FROM proposta_imagens"))
         conn.execute(text("DELETE FROM propostas"))
         conn.execute(text("UPDATE contador SET valor = 0 WHERE id = 1"))
+
+
+def limpar_arquivos_grandes(confirmar: bool = False) -> dict:
+    """Remove (poe NULL) a LPU, o .docx e o .pdf ja guardados em TODAS as
+    propostas/revisoes existentes, mantendo apenas os dados (endereco,
+    preco, etc). Usado para reclamar espaco de registros salvos antes dessa
+    mudanca de politica de armazenamento -- os campos de dados nao sao
+    tocados, apenas os arquivos binarios.
+
+    Trava de seguranca igual a resetar_banco: exige confirmar=True quando
+    o banco em uso for o Postgres de producao."""
+    status = status_backend()
+    if status["postgres"] and not confirmar:
+        raise RuntimeError(
+            "Recusado: isso alteraria o banco de PRODUCAO (Postgres). "
+            "Se e realmente isso que voce quer, chame "
+            "limpar_arquivos_grandes(confirmar=True)."
+        )
+
+    engine = _get_engine()
+    with engine.begin() as conn:
+        r1 = conn.execute(
+            text(
+                "UPDATE propostas SET lpu_arquivo = NULL, proposta_arquivo = NULL, "
+                "proposta_pdf_arquivo = NULL WHERE lpu_arquivo IS NOT NULL "
+                "OR proposta_arquivo IS NOT NULL OR proposta_pdf_arquivo IS NOT NULL"
+            )
+        )
+        r2 = conn.execute(
+            text(
+                "UPDATE revisoes SET lpu_arquivo = NULL, proposta_arquivo = NULL, "
+                "proposta_pdf_arquivo = NULL WHERE lpu_arquivo IS NOT NULL "
+                "OR proposta_arquivo IS NOT NULL OR proposta_pdf_arquivo IS NOT NULL"
+            )
+        )
+    return {"propostas_limpas": r1.rowcount, "revisoes_limpas": r2.rowcount}
