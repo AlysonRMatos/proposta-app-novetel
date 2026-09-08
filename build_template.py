@@ -183,6 +183,14 @@ def main():
     run_codigo.font.name = "Trebuchet MS"
 
     doc.save(OUT_PATH)
+
+    # Conserta o numero de pagina das secoes finais (margem zero herdando o
+    # rodape da secao anterior -> numero colado na borda). Ver o modulo.
+    from rodape_paginacao_fix import corrigir_rodape_paginacao
+
+    if corrigir_rodape_paginacao(OUT_PATH):
+        print("Rodape de paginacao das secoes finais corrigido.")
+
     print(f"Template gerado a partir do documento original em: {OUT_PATH}")
 
 

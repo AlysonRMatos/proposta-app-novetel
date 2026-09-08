@@ -573,6 +573,12 @@ gerar = st.button(
 )
 
 if gerar:
+    # Normaliza o nome do cliente: 1a letra maiuscula, resto preservado
+    # ("shopee" -> "Shopee", "mercado livre" -> "Mercado livre").
+    cliente = cliente.strip()
+    if cliente:
+        cliente = cliente[0].upper() + cliente[1:]
+
     if not cliente:
         st.error("Preencha o campo Cliente.")
         st.stop()
