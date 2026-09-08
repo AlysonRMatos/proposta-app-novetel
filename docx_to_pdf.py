@@ -1,12 +1,13 @@
 """Conversao de .docx para .pdf usando LibreOffice headless.
 
 Funciona tanto localmente (Windows, se o LibreOffice estiver instalado)
-quanto no Streamlit Community Cloud (Linux, via packages.txt).
+quanto no servidor (imagem Docker com libreoffice-writer -- ver Dockerfile).
 """
 import os
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 CAMINHOS_WINDOWS = [
     r"C:\Program Files\LibreOffice\program\soffice.exe",
@@ -40,11 +41,18 @@ def converter_docx_para_pdf_bytes(docx_bytes: bytes) -> bytes:
         with open(docx_path, "wb") as f:
             f.write(docx_bytes)
 
+        # Perfil de usuario proprio e descartavel para o LibreOffice, dentro
+        # do tmp_dir. Sem isso ele tenta escrever em ~/.config e falha em
+        # containers onde o HOME nao e gravavel (ex: Hugging Face Spaces).
+        perfil_lo = (Path(tmp_dir) / "lo_profile").as_uri()
+
         resultado = subprocess.run(
             [
                 soffice,
                 "--headless",
                 "--norestore",
+                "--nolockcheck",
+                f"-env:UserInstallation={perfil_lo}",
                 "--convert-to",
                 "pdf",
                 "--outdir",
