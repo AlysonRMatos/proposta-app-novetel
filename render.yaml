@@ -1,0 +1,15 @@
+# Plano B de deploy: Render (https://render.com) — Docker, plano free.
+# Deploy automatico a cada push na main. Configure DATABASE_URL e APP_PASSWORD
+# em Environment no painel do servico (nao ficam no repo).
+services:
+  - type: web
+    name: proposta-app-novetel
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_PASSWORD
+        sync: false

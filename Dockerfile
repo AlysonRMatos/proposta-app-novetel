@@ -23,11 +23,13 @@ COPY . .
 RUN mkdir -p /var/apphome && chmod 777 /var/apphome
 ENV HOME=/var/apphome
 
+# Render/Cloud Run injetam a porta via $PORT; localmente cai em 7860.
+ENV PORT=7860
 EXPOSE 7860
 
-CMD ["streamlit", "run", "app.py", \
-     "--server.port=7860", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--server.enableCORS=false", \
-     "--server.enableXsrfProtection=false"]
+CMD streamlit run app.py \
+    --server.port=${PORT} \
+    --server.address=0.0.0.0 \
+    --server.headless=true \
+    --server.enableCORS=false \
+    --server.enableXsrfProtection=false

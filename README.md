@@ -1,13 +1,3 @@
----
-title: Gerador de Propostas Novetel
-emoji: 📄
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Gerador de Propostas Técnicas — Novetel
 
 App Streamlit que gera propostas técnico-comerciais em `.docx` (e `.pdf`, via
@@ -20,15 +10,17 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Para gerar PDF localmente é preciso ter o LibreOffice instalado (no servidor
-ele vem na imagem Docker).
+Para gerar PDF localmente é preciso ter o LibreOffice instalado.
 
 ## Deploy
 
-Produção roda no **Hugging Face Spaces** (SDK Docker): a cada push na branch
-`main` o Space reconstrói a imagem a partir do `Dockerfile`.
+**Streamlit Community Cloud** (atual): push na `main` → redeploy automático.
+O LibreOffice é instalado via `environment.yml` (conda-forge), não via `apt`.
 
-Segredos necessários no Space (*Settings → Variables and secrets*):
+**Plano B — Render** (`render.yaml` + `Dockerfile`): usar se o build conda no
+Streamlit não couber no limite de recursos.
+
+Segredos necessários (Streamlit: *Settings → Secrets*; Render: *Environment*):
 
 | Chave           | Para que serve                                             |
 |-----------------|-----------------------------------------------------------|
