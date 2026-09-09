@@ -69,6 +69,7 @@ _CAMPOS_FORMULARIO = [
     ("cidade", "TEXT"),
     ("prazo_execucao", "TEXT"),
     ("observacoes_exclusao", "TEXT"),
+    ("descricao_tecnica", "TEXT"),
 ]
 
 _CAMPOS_ARQUIVOS = [
@@ -78,6 +79,12 @@ _CAMPOS_ARQUIVOS = [
     ("proposta_arquivo", "BYTEA"),
     ("proposta_pdf_nome_arquivo", "TEXT"),
     ("proposta_pdf_arquivo", "BYTEA"),
+    # A partir da divisao em Tecnica + Comercial: so os nomes dos 4 arquivos
+    # (os binarios continuam nao sendo guardados).
+    ("proposta_tecnica_nome_arquivo", "TEXT"),
+    ("proposta_tecnica_pdf_nome_arquivo", "TEXT"),
+    ("proposta_comercial_nome_arquivo", "TEXT"),
+    ("proposta_comercial_pdf_nome_arquivo", "TEXT"),
 ]
 
 
@@ -219,63 +226,57 @@ def salvar_proposta(
     cidade: str = None,
     prazo_execucao: str = None,
     observacoes_exclusao: str = None,
+    descricao_tecnica: str = None,
     lpu_nome_arquivo: str = None,
     lpu_arquivo: bytes = None,
     proposta_nome_arquivo: str = None,
     proposta_arquivo: bytes = None,
     proposta_pdf_nome_arquivo: str = None,
     proposta_pdf_arquivo: bytes = None,
+    proposta_tecnica_nome_arquivo: str = None,
+    proposta_tecnica_pdf_nome_arquivo: str = None,
+    proposta_comercial_nome_arquivo: str = None,
+    proposta_comercial_pdf_nome_arquivo: str = None,
 ) -> str:
     """Grava o registro completo da proposta (numero ja reservado
     previamente com proximo_numero_atomic), incluindo os arquivos e todos
     os campos do formulario (necessarios para uma revisao futura poder
     puxar tudo de volta)."""
     codigo = montar_codigo(abreviacao_cliente, numero, data_proposta)
+    dados = {
+        "numero": numero,
+        "codigo": codigo,
+        "cliente": cliente,
+        "abreviacao_cliente": abreviacao_cliente,
+        "codigo_projeto": codigo_projeto,
+        "local": local,
+        "data_proposta": data_proposta.strftime("%Y-%m-%d"),
+        "valor_total": valor_total,
+        "criado_em": datetime.now(timezone.utc).isoformat(),
+        "escopo_titulo": escopo_titulo,
+        "objeto": objeto,
+        "endereco": endereco,
+        "cidade": cidade,
+        "prazo_execucao": prazo_execucao,
+        "observacoes_exclusao": observacoes_exclusao,
+        "descricao_tecnica": descricao_tecnica,
+        "lpu_nome_arquivo": lpu_nome_arquivo,
+        "lpu_arquivo": lpu_arquivo,
+        "proposta_nome_arquivo": proposta_nome_arquivo,
+        "proposta_arquivo": proposta_arquivo,
+        "proposta_pdf_nome_arquivo": proposta_pdf_nome_arquivo,
+        "proposta_pdf_arquivo": proposta_pdf_arquivo,
+        "proposta_tecnica_nome_arquivo": proposta_tecnica_nome_arquivo,
+        "proposta_tecnica_pdf_nome_arquivo": proposta_tecnica_pdf_nome_arquivo,
+        "proposta_comercial_nome_arquivo": proposta_comercial_nome_arquivo,
+        "proposta_comercial_pdf_nome_arquivo": proposta_comercial_pdf_nome_arquivo,
+    }
+    colunas = ", ".join(dados)
+    binds = ", ".join(f":{k}" for k in dados)
     engine = _get_engine()
     with engine.begin() as conn:
         conn.execute(
-            text(
-                """
-                INSERT INTO propostas (
-                    numero, codigo, cliente, abreviacao_cliente,
-                    codigo_projeto, local, data_proposta, valor_total, criado_em,
-                    escopo_titulo, objeto, endereco, cidade, prazo_execucao,
-                    observacoes_exclusao,
-                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
-                    proposta_pdf_nome_arquivo, proposta_pdf_arquivo
-                ) VALUES (
-                    :numero, :codigo, :cliente, :abrev,
-                    :codigo_projeto, :local, :data_proposta, :valor_total, :criado_em,
-                    :escopo_titulo, :objeto, :endereco, :cidade, :prazo_execucao,
-                    :observacoes_exclusao,
-                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
-                    :prop_pdf_nome, :prop_pdf_arq
-                )
-                """
-            ),
-            {
-                "numero": numero,
-                "codigo": codigo,
-                "cliente": cliente,
-                "abrev": abreviacao_cliente,
-                "codigo_projeto": codigo_projeto,
-                "local": local,
-                "data_proposta": data_proposta.strftime("%Y-%m-%d"),
-                "valor_total": valor_total,
-                "criado_em": datetime.now(timezone.utc).isoformat(),
-                "escopo_titulo": escopo_titulo,
-                "objeto": objeto,
-                "endereco": endereco,
-                "cidade": cidade,
-                "prazo_execucao": prazo_execucao,
-                "observacoes_exclusao": observacoes_exclusao,
-                "lpu_nome": lpu_nome_arquivo,
-                "lpu_arq": lpu_arquivo,
-                "prop_nome": proposta_nome_arquivo,
-                "prop_arq": proposta_arquivo,
-                "prop_pdf_nome": proposta_pdf_nome_arquivo,
-                "prop_pdf_arq": proposta_pdf_arquivo,
-            },
+            text(f"INSERT INTO propostas ({colunas}) VALUES ({binds})"), dados
         )
     return codigo
 
@@ -337,7 +338,7 @@ def obter_proposta_completa(numero: int):
                 """
                 SELECT numero, codigo, cliente, abreviacao_cliente, codigo_projeto,
                        local, valor_total, escopo_titulo, objeto, endereco, cidade,
-                       prazo_execucao
+                       prazo_execucao, descricao_tecnica
                 FROM propostas WHERE numero = :n
                 """
             ),
@@ -416,68 +417,58 @@ def salvar_revisao(
     cidade: str = None,
     prazo_execucao: str = None,
     observacoes_exclusao: str = None,
+    descricao_tecnica: str = None,
     lpu_nome_arquivo: str = None,
     lpu_arquivo: bytes = None,
     proposta_nome_arquivo: str = None,
     proposta_arquivo: bytes = None,
     proposta_pdf_nome_arquivo: str = None,
     proposta_pdf_arquivo: bytes = None,
+    proposta_tecnica_nome_arquivo: str = None,
+    proposta_tecnica_pdf_nome_arquivo: str = None,
+    proposta_comercial_nome_arquivo: str = None,
+    proposta_comercial_pdf_nome_arquivo: str = None,
     justificativas_itens: dict = None,
 ) -> str:
     import json
 
     codigo = montar_codigo_revisao(abreviacao_cliente, numero_pai, numero_revisao, data_proposta)
+    dados = {
+        "numero_pai": numero_pai,
+        "numero_revisao": numero_revisao,
+        "codigo": codigo,
+        "cliente": cliente,
+        "abreviacao_cliente": abreviacao_cliente,
+        "codigo_projeto": codigo_projeto,
+        "local": local,
+        "data_proposta": data_proposta.strftime("%Y-%m-%d"),
+        "valor_total": valor_total,
+        "solicitacao_alteracao": solicitacao_alteracao,
+        "criado_em": datetime.now(timezone.utc).isoformat(),
+        "escopo_titulo": escopo_titulo,
+        "objeto": objeto,
+        "endereco": endereco,
+        "cidade": cidade,
+        "prazo_execucao": prazo_execucao,
+        "observacoes_exclusao": observacoes_exclusao,
+        "descricao_tecnica": descricao_tecnica,
+        "justificativas_itens": json.dumps(justificativas_itens or {}, ensure_ascii=False),
+        "lpu_nome_arquivo": lpu_nome_arquivo,
+        "lpu_arquivo": lpu_arquivo,
+        "proposta_nome_arquivo": proposta_nome_arquivo,
+        "proposta_arquivo": proposta_arquivo,
+        "proposta_pdf_nome_arquivo": proposta_pdf_nome_arquivo,
+        "proposta_pdf_arquivo": proposta_pdf_arquivo,
+        "proposta_tecnica_nome_arquivo": proposta_tecnica_nome_arquivo,
+        "proposta_tecnica_pdf_nome_arquivo": proposta_tecnica_pdf_nome_arquivo,
+        "proposta_comercial_nome_arquivo": proposta_comercial_nome_arquivo,
+        "proposta_comercial_pdf_nome_arquivo": proposta_comercial_pdf_nome_arquivo,
+    }
+    colunas = ", ".join(dados)
+    binds = ", ".join(f":{k}" for k in dados)
     engine = _get_engine()
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO revisoes (
-                    numero_pai, numero_revisao, codigo, cliente, abreviacao_cliente,
-                    codigo_projeto, local, data_proposta, valor_total,
-                    solicitacao_alteracao, criado_em,
-                    escopo_titulo, objeto, endereco, cidade, prazo_execucao,
-                    observacoes_exclusao, justificativas_itens,
-                    lpu_nome_arquivo, lpu_arquivo, proposta_nome_arquivo, proposta_arquivo,
-                    proposta_pdf_nome_arquivo, proposta_pdf_arquivo
-                ) VALUES (
-                    :numero_pai, :numero_revisao, :codigo, :cliente, :abrev,
-                    :codigo_projeto, :local, :data_proposta, :valor_total,
-                    :solicitacao, :criado_em,
-                    :escopo_titulo, :objeto, :endereco, :cidade, :prazo_execucao,
-                    :observacoes_exclusao, :justificativas,
-                    :lpu_nome, :lpu_arq, :prop_nome, :prop_arq,
-                    :prop_pdf_nome, :prop_pdf_arq
-                )
-                """
-            ),
-            {
-                "numero_pai": numero_pai,
-                "numero_revisao": numero_revisao,
-                "codigo": codigo,
-                "cliente": cliente,
-                "abrev": abreviacao_cliente,
-                "codigo_projeto": codigo_projeto,
-                "local": local,
-                "data_proposta": data_proposta.strftime("%Y-%m-%d"),
-                "valor_total": valor_total,
-                "solicitacao": solicitacao_alteracao,
-                "criado_em": datetime.now(timezone.utc).isoformat(),
-                "escopo_titulo": escopo_titulo,
-                "objeto": objeto,
-                "endereco": endereco,
-                "cidade": cidade,
-                "prazo_execucao": prazo_execucao,
-                "observacoes_exclusao": observacoes_exclusao,
-                "justificativas": json.dumps(justificativas_itens or {}, ensure_ascii=False),
-                "lpu_nome": lpu_nome_arquivo,
-                "lpu_arq": lpu_arquivo,
-                "prop_nome": proposta_nome_arquivo,
-                "prop_arq": proposta_arquivo,
-                "prop_pdf_nome": proposta_pdf_nome_arquivo,
-                "prop_pdf_arq": proposta_pdf_arquivo,
-            },
-        )
+        conn.execute(text(f"INSERT INTO revisoes ({colunas}) VALUES ({binds})"), dados)
     return codigo
 
 

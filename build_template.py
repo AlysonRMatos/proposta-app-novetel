@@ -191,6 +191,13 @@ def main():
     if corrigir_rodape_paginacao(OUT_PATH):
         print("Rodape de paginacao das secoes finais corrigido.")
 
+    # Insere o placeholder {{p descricao_tecnica}} no master e gera os dois
+    # templates derivados (Proposta Tecnica e Proposta Comercial).
+    from split_templates import gerar_variantes
+
+    gerar_variantes(OUT_PATH, os.path.dirname(OUT_PATH))
+    print("template_tecnica.docx e template_comercial.docx gerados.")
+
     print(f"Template gerado a partir do documento original em: {OUT_PATH}")
 
 

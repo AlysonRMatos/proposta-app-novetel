@@ -25,14 +25,22 @@ BOOKMARK_HEADINGS = {
     "_Toc190957977": "Condições Gerais",
 }
 
+# Variantes: a Tecnica troca "Prazo e Preco" pela "Descricao Tecnica"
+# (mesmo bookmark _Toc190957976); a Comercial nao tem "Especificacoes".
+HEADINGS_TECNICA = {**BOOKMARK_HEADINGS, "_Toc190957976": "Descrição Técnica"}
+HEADINGS_COMERCIAL = {
+    k: v for k, v in BOOKMARK_HEADINGS.items() if k != "_Toc190957975"
+}
 
-def mapear_paginas_por_titulo(pdf_bytes: bytes) -> dict:
+
+def mapear_paginas_por_titulo(pdf_bytes: bytes, bookmark_headings: dict = None) -> dict:
     """Abre o PDF e retorna {texto_do_titulo: numero_da_pagina (1-indexado)},
     usando a primeira ocorrencia de cada titulo encontrada apos a pagina do
     proprio indice (que tambem lista o nome de cada secao, e nao pode ser
     confundida com a secao real)."""
     import fitz  # PyMuPDF
 
+    bookmark_headings = bookmark_headings or BOOKMARK_HEADINGS
     resultado = {}
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
@@ -43,7 +51,7 @@ def mapear_paginas_por_titulo(pdf_bytes: bytes) -> dict:
                 break
         inicio_busca = (pagina_indice + 1) if pagina_indice is not None else 0
 
-        for titulo in BOOKMARK_HEADINGS.values():
+        for titulo in bookmark_headings.values():
             for pagina_idx in range(inicio_busca, doc.page_count):
                 if doc[pagina_idx].search_for(titulo):
                     resultado[titulo] = pagina_idx + 1
@@ -88,14 +96,16 @@ def _atualizar_cache_pageref(document_element, mapa_bookmark_pagina: dict):
             ultimo_wt.text = str(pagina)
 
 
-def corrigir_indice(docx_bytes: bytes, pdf_bytes_primeira_passada: bytes) -> bytes:
+def corrigir_indice(docx_bytes: bytes, pdf_bytes_primeira_passada: bytes,
+                    bookmark_headings: dict = None) -> bytes:
     """Recebe os bytes do docx gerado e de uma primeira conversao em PDF
     (usada so para descobrir as paginas reais), e retorna os bytes do docx
     com os numeros do indice corrigidos."""
-    mapa_paginas = mapear_paginas_por_titulo(pdf_bytes_primeira_passada)
+    bookmark_headings = bookmark_headings or BOOKMARK_HEADINGS
+    mapa_paginas = mapear_paginas_por_titulo(pdf_bytes_primeira_passada, bookmark_headings)
     mapa_bookmark_pagina = {
         bookmark: mapa_paginas[titulo]
-        for bookmark, titulo in BOOKMARK_HEADINGS.items()
+        for bookmark, titulo in bookmark_headings.items()
         if titulo in mapa_paginas
     }
     if not mapa_bookmark_pagina:

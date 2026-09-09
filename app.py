@@ -15,13 +15,17 @@ from clientes import obter_abreviacao
 from imagens_grid import montar_grid_imagens
 from counter import montar_codigo, montar_codigo_revisao
 from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
-from indice_fix import corrigir_indice
+from indice_fix import corrigir_indice, HEADINGS_TECNICA, HEADINGS_COMERCIAL
 from revisao_secao import montar_secao_revisao
+from descricao_tecnica_rascunho import montar_rascunho
+from descricao_tecnica_secao import montar_secao_descricao_tecnica
 from comparar_lpu import comparar_itens
 import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(BASE_DIR, "templates", "template_proposta.docx")
+TEMPLATE_TECNICA_PATH = os.path.join(BASE_DIR, "templates", "template_tecnica.docx")
+TEMPLATE_COMERCIAL_PATH = os.path.join(BASE_DIR, "templates", "template_comercial.docx")
 
 st.set_page_config(page_title="Gerador de Propostas - Novetel", layout="wide")
 
@@ -70,11 +74,15 @@ CAMPOS_LIMPAVEIS = [
     "valor_total_extenso",
     "data_proposta",
     "observacoes_exclusao",
+    "descricao_tecnica",
     "_lpu_fingerprint",
     "escolha_revisao",
     "solicitacao_alteracao",
     "_revisao_carregada",
 ]
+
+MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+MIME_PDF = "application/pdf"
 
 col_titulo, col_limpar = st.columns([4, 1])
 with col_titulo:
@@ -87,10 +95,10 @@ with col_limpar:
         st.session_state["uploader_version"] += 1
         st.rerun()
 
-if not os.path.exists(TEMPLATE_PATH):
+if not (os.path.exists(TEMPLATE_TECNICA_PATH) and os.path.exists(TEMPLATE_COMERCIAL_PATH)):
     st.error(
-        "Template nao encontrado. Rode `python build_template.py` na pasta do projeto "
-        "antes de usar o app."
+        "Templates nao encontrados. Rode `python build_template.py` (ou "
+        "`python split_templates.py`) na pasta do projeto antes de usar o app."
     )
     st.stop()
 
@@ -108,40 +116,31 @@ st.caption(f"Proximo numero sequencial de proposta: **{db.espiar_proximo_numero(
 
 # ---------- Download pendente da ultima proposta gerada ----------
 # LPU, .docx e .pdf nao ficam guardados no banco (so os dados). Enquanto o
-# usuario nao baixar os dois arquivos da proposta que acabou de gerar, eles
-# so existem aqui -- por isso o aviso fica fixo no topo ate confirmar.
+# usuario nao baixar os arquivos da proposta que acabou de gerar, eles so
+# existem aqui -- por isso o aviso fica fixo no topo ate confirmar.
 pendente = st.session_state.get("pendente_download")
 if pendente:
     st.warning(
-        f"⚠️ Proposta **{pendente['codigo']}** gerada — baixe o **.docx** e o **.pdf** "
-        "agora. Os arquivos não ficam salvos no servidor; se sair sem baixar, "
-        "não tem como recuperá-los depois (só os dados ficam registrados)."
+        f"⚠️ Proposta **{pendente['codigo']}** gerada — baixe **todos os arquivos** "
+        "abaixo agora (Técnica e Comercial, .docx e .pdf). Os arquivos não ficam "
+        "salvos no servidor; se sair sem baixar, não tem como recuperá-los depois "
+        "(só os dados ficam registrados)."
     )
-    col_pend_docx, col_pend_pdf = st.columns(2)
-    if col_pend_docx.download_button(
-        "Baixar proposta (.docx)",
-        data=pendente["docx_bytes"],
-        file_name=pendente["docx_nome"],
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        key="pendente_download_docx",
-    ):
-        st.session_state["pendente_download"]["docx_baixado"] = True
-
-    if pendente["pdf_bytes"]:
-        if col_pend_pdf.download_button(
-            "Baixar proposta (.pdf)",
-            data=pendente["pdf_bytes"],
-            file_name=pendente["pdf_nome"],
-            mime="application/pdf",
-            key="pendente_download_pdf",
+    colunas = st.columns(len(pendente["arquivos"]))
+    for i, arq in enumerate(pendente["arquivos"]):
+        if arq["bytes"] is None:
+            colunas[i].caption(f"{arq['rotulo']}: não disponível.")
+            arq["baixado"] = True
+        elif colunas[i].download_button(
+            f"Baixar {arq['rotulo']}",
+            data=arq["bytes"],
+            file_name=arq["nome"],
+            mime=arq["mime"],
+            key=f"pend_{i}",
         ):
-            st.session_state["pendente_download"]["pdf_baixado"] = True
-    else:
-        col_pend_pdf.caption("PDF não disponível para esta proposta.")
-        st.session_state["pendente_download"]["pdf_baixado"] = True
+            arq["baixado"] = True
 
-    pdte = st.session_state["pendente_download"]
-    if pdte["docx_baixado"] and pdte["pdf_baixado"]:
+    if all(a["baixado"] for a in pendente["arquivos"]):
         st.success("Arquivos baixados. Liberando os campos para a próxima proposta...")
         for campo in CAMPOS_LIMPAVEIS:
             st.session_state.pop(campo, None)
@@ -149,12 +148,8 @@ if pendente:
         st.session_state.pop("pendente_download", None)
         st.rerun()
     else:
-        faltando = []
-        if not pdte["docx_baixado"]:
-            faltando.append(".docx")
-        if not pdte["pdf_baixado"]:
-            faltando.append(".pdf")
-        st.caption(f"Ainda falta baixar: {', '.join(faltando)}.")
+        faltam = [a["rotulo"] for a in pendente["arquivos"] if not a["baixado"]]
+        st.caption(f"Ainda falta baixar: {', '.join(faltam)}.")
 
 historico = db.listar_propostas()
 
@@ -411,6 +406,9 @@ with st.expander("Revisar uma proposta existente (opcional)"):
                         st.session_state["objeto"] = dados_antigos.objeto or ""
                         st.session_state["endereco"] = dados_antigos.endereco or ""
                         st.session_state["cidade"] = dados_antigos.cidade or ""
+                        st.session_state["descricao_tecnica"] = (
+                            dados_antigos.descricao_tecnica or ""
+                        )
                     break
         st.rerun()
 
@@ -559,17 +557,41 @@ observacoes_exclusao = st.text_area(
     key="observacoes_exclusao",
 )
 
-# ---------- Gerar ----------
-st.header("5. Gerar proposta")
+# ---------- 5. Descricao Tecnica ----------
+st.header("5. Descrição Técnica")
+st.caption(
+    "Rascunho montado a partir dos itens da LPU. Clique em preparar, edite o texto "
+    "à vontade (cada linha vira um parágrafo) e só depois gere as propostas. "
+    "Entra **só na Proposta Técnica**, logo depois da tabela de Especificações."
+)
+if st.button("Preparar / atualizar rascunho da descrição técnica", disabled=(dados_lpu is None)):
+    st.session_state["descricao_tecnica"] = montar_rascunho(itens_selecionados, dados_lpu)
+    st.rerun()
+
+if st.session_state.get("descricao_tecnica"):
+    st.text_area(
+        "Descrição técnica (edite livremente)",
+        key="descricao_tecnica",
+        height=380,
+    )
+elif dados_lpu is not None:
+    st.info("Clique em **Preparar / atualizar rascunho da descrição técnica** para começar.")
+
+# ---------- 6. Gerar ----------
+st.header("6. Gerar propostas")
 if st.session_state.get("pendente_download"):
     st.caption(
-        "Baixe o .docx e o .pdf da proposta gerada (aviso no topo da página) "
+        "Baixe todos os arquivos da proposta gerada (aviso no topo da página) "
         "antes de gerar uma nova."
     )
 gerar = st.button(
-    "Gerar Proposta (.docx)",
+    "Gerar Proposta Técnica + Comercial (.docx + .pdf)",
     type="primary",
-    disabled=(dados_lpu is None) or bool(st.session_state.get("pendente_download")),
+    disabled=(
+        dados_lpu is None
+        or not (st.session_state.get("descricao_tecnica") or "").strip()
+        or bool(st.session_state.get("pendente_download"))
+    ),
 )
 
 if gerar:
@@ -586,6 +608,8 @@ if gerar:
         st.error("Preencha a abreviação do cliente.")
         st.stop()
 
+    descricao_tecnica_txt = (st.session_state.get("descricao_tecnica") or "").strip()
+
     revisao_ativa = numero_pai_revisao is not None
 
     if revisao_ativa:
@@ -597,11 +621,8 @@ if gerar:
         numero_proposta = db.proximo_numero_atomic()
         codigo_proposta = montar_codigo(abreviacao_cliente, numero_proposta, data_proposta)
 
-    tpl = DocxTemplate(TEMPLATE_PATH)
-
-    # Imagens: fotos da proposta anterior (se for revisao) + as novas anexadas,
-    # em um unico grid padronizado. Tambem guarda (nome, bytes) de tudo para
-    # salvar no banco.
+    # Imagens: fotos da proposta anterior (se for revisao) + as novas anexadas.
+    # Salva os arquivos temporarios uma vez; cada template monta seu proprio grid.
     imagens_para_salvar = []
     caminhos_temp = []
     for nome_antiga, bytes_antiga in imagens_antigas_revisao:
@@ -618,29 +639,7 @@ if gerar:
                 caminhos_temp.append(tmp_img.name)
             imagens_para_salvar.append((img.name, dados_img))
 
-    subdoc = tpl.new_subdoc()
-    montar_grid_imagens(subdoc, caminhos_temp)
-    for caminho in caminhos_temp:
-        os.unlink(caminho)
-
-    tabela_subdoc = tpl.new_subdoc()
-    montar_tabela_itens(tabela_subdoc, itens_selecionados)
-
-    secao_revisao_subdoc = tpl.new_subdoc()
-    montar_secao_revisao(
-        secao_revisao_subdoc,
-        ativa=revisao_ativa,
-        codigo_pai=codigo_pai_revisao,
-        numero_revisao=numero_revisao_atual if revisao_ativa else None,
-        solicitacao_alteracao=solicitacao_alteracao,
-        itens_antigos=itens_antigos_revisao,
-        itens_novos=itens_selecionados,
-        itens_alterados=itens_alterados_revisao,
-        itens_adicionados=itens_adicionados_revisao,
-        justificativas_itens=justificativas_itens,
-    )
-
-    context = {
+    context_base = {
         "codigo_proposta": codigo_proposta,
         "cliente": cliente,
         "codigo_projeto": dados_lpu["codigo_projeto"],
@@ -651,37 +650,78 @@ if gerar:
         "endereco": endereco,
         "cidade": cidade,
         "objeto": objeto,
-        "itens_tabela": tabela_subdoc,
         "observacoes_exclusao": observacoes_exclusao or "Nao ha itens exclusos.",
         "prazo_execucao": prazo_execucao,
         "valor_total_extenso": valor_total_extenso,
-        "imagens": subdoc,
-        "secao_revisao": secao_revisao_subdoc,
     }
 
-    tpl.render(context)
+    def _montar_contexto(tpl, variante):
+        ctx = dict(context_base)
+        img_sub = tpl.new_subdoc()
+        montar_grid_imagens(img_sub, caminhos_temp)
+        ctx["imagens"] = img_sub
 
-    nome_saida = f"{codigo_proposta}_{dados_lpu['codigo_projeto']}_{cliente}.docx".replace(" ", "_")
-    buffer_docx = io.BytesIO()
-    tpl.save(buffer_docx)
-    proposta_bytes = buffer_docx.getvalue()
+        rev_sub = tpl.new_subdoc()
+        montar_secao_revisao(
+            rev_sub,
+            ativa=revisao_ativa,
+            codigo_pai=codigo_pai_revisao,
+            numero_revisao=numero_revisao_atual if revisao_ativa else None,
+            solicitacao_alteracao=solicitacao_alteracao,
+            itens_antigos=itens_antigos_revisao,
+            itens_novos=itens_selecionados,
+            itens_alterados=itens_alterados_revisao,
+            itens_adicionados=itens_adicionados_revisao,
+            justificativas_itens=justificativas_itens,
+        )
+        ctx["secao_revisao"] = rev_sub
 
-    nome_saida_pdf = None
-    proposta_pdf_bytes = None
-    if conversao_disponivel():
-        try:
-            # 1a passada: só para descobrir em qual pagina cada secao caiu
-            pdf_rascunho = converter_docx_para_pdf_bytes(proposta_bytes)
-            # corrige os numeros do indice (cache de campo PAGEREF) com as
-            # paginas reais descobertas na 1a passada
-            proposta_bytes = corrigir_indice(proposta_bytes, pdf_rascunho)
-            # 2a passada: gera o PDF final ja com o indice correto
-            proposta_pdf_bytes = converter_docx_para_pdf_bytes(proposta_bytes)
-            nome_saida_pdf = nome_saida.replace(".docx", ".pdf")
-        except Exception as e:
-            st.warning(f"Nao foi possivel gerar o PDF automaticamente: {e}")
-    else:
-        st.info("Conversor de PDF nao disponivel neste ambiente; apenas o .docx foi gerado.")
+        if variante == "tecnica":
+            tab_sub = tpl.new_subdoc()
+            montar_tabela_itens(tab_sub, itens_selecionados)
+            ctx["itens_tabela"] = tab_sub
+
+            dt_sub = tpl.new_subdoc()
+            montar_secao_descricao_tecnica(dt_sub, descricao_tecnica_txt, prazo_execucao)
+            ctx["descricao_tecnica"] = dt_sub
+        return ctx
+
+    resultados = {}
+    variantes = [
+        ("tecnica", "TECNICA", TEMPLATE_TECNICA_PATH, HEADINGS_TECNICA),
+        ("comercial", "COMERCIAL", TEMPLATE_COMERCIAL_PATH, HEADINGS_COMERCIAL),
+    ]
+    with st.spinner("Gerando Proposta Técnica e Comercial (.docx + .pdf). Pode levar 1-2 min..."):
+        for chave, sufixo, caminho, headings in variantes:
+            tpl = DocxTemplate(caminho)
+            tpl.render(_montar_contexto(tpl, chave))
+            buffer_docx = io.BytesIO()
+            tpl.save(buffer_docx)
+            docx_bytes = buffer_docx.getvalue()
+
+            nome_docx = (
+                f"{codigo_proposta}_{dados_lpu['codigo_projeto']}_{cliente}_{sufixo}.docx"
+            ).replace(" ", "_")
+            nome_pdf = None
+            pdf_bytes = None
+            if conversao_disponivel():
+                try:
+                    pdf_rascunho = converter_docx_para_pdf_bytes(docx_bytes)
+                    docx_bytes = corrigir_indice(docx_bytes, pdf_rascunho, headings)
+                    pdf_bytes = converter_docx_para_pdf_bytes(docx_bytes)
+                    nome_pdf = nome_docx.replace(".docx", ".pdf")
+                except Exception as e:
+                    st.warning(f"Nao foi possivel gerar o PDF da proposta {chave}: {e}")
+            resultados[chave] = (nome_docx, docx_bytes, nome_pdf, pdf_bytes)
+
+    for caminho in caminhos_temp:
+        os.unlink(caminho)
+
+    if not conversao_disponivel():
+        st.info("Conversor de PDF nao disponivel neste ambiente; apenas os .docx foram gerados.")
+
+    t_nome, t_docx, t_pdf_nome, t_pdf = resultados["tecnica"]
+    c_nome, c_docx, c_pdf_nome, c_pdf = resultados["comercial"]
 
     campos_comuns = dict(
         abreviacao_cliente=abreviacao_cliente,
@@ -696,13 +736,14 @@ if gerar:
         cidade=cidade,
         prazo_execucao=prazo_execucao,
         observacoes_exclusao=observacoes_exclusao,
-        # A partir daqui, so o NOME dos arquivos fica registrado -- o
-        # conteudo (LPU, .docx, .pdf) nao e mais guardado no banco, pra nao
-        # lotar o espaco. Por isso o usuario precisa baixar os arquivos
-        # logo apos gerar (ver bloco de "pendente_download" abaixo).
+        descricao_tecnica=descricao_tecnica_txt,
+        # So o NOME dos arquivos fica registrado -- o conteudo nao e guardado
+        # no banco (por isso o usuario precisa baixar logo apos gerar).
         lpu_nome_arquivo=lpu_file.name,
-        proposta_nome_arquivo=nome_saida,
-        proposta_pdf_nome_arquivo=nome_saida_pdf,
+        proposta_tecnica_nome_arquivo=t_nome,
+        proposta_tecnica_pdf_nome_arquivo=t_pdf_nome,
+        proposta_comercial_nome_arquivo=c_nome,
+        proposta_comercial_pdf_nome_arquivo=c_pdf_nome,
     )
 
     if revisao_ativa:
@@ -718,17 +759,17 @@ if gerar:
         db.salvar_proposta(numero=numero_proposta, **campos_comuns)
         db.salvar_imagens_proposta(numero_proposta, imagens_para_salvar)
 
-    # Os arquivos NAO ficam guardados no banco -- so existem aqui, em
-    # memoria, ate a pagina fechar. Guarda em session_state e so libera
-    # gerar outra proposta / limpa os campos depois que os dois forem
-    # baixados, pra garantir que o usuario nao perca o resultado.
     st.session_state["pendente_download"] = {
         "codigo": codigo_proposta,
-        "docx_bytes": proposta_bytes,
-        "docx_nome": nome_saida,
-        "pdf_bytes": proposta_pdf_bytes,
-        "pdf_nome": nome_saida_pdf,
-        "docx_baixado": False,
-        "pdf_baixado": False,
+        "arquivos": [
+            {"rotulo": "Técnica (.docx)", "nome": t_nome, "mime": MIME_DOCX,
+             "bytes": t_docx, "baixado": False},
+            {"rotulo": "Técnica (.pdf)", "nome": t_pdf_nome, "mime": MIME_PDF,
+             "bytes": t_pdf, "baixado": False},
+            {"rotulo": "Comercial (.docx)", "nome": c_nome, "mime": MIME_DOCX,
+             "bytes": c_docx, "baixado": False},
+            {"rotulo": "Comercial (.pdf)", "nome": c_pdf_nome, "mime": MIME_PDF,
+             "bytes": c_pdf, "baixado": False},
+        ],
     }
     st.rerun()
