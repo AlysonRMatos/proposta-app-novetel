@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import os
 import tempfile
 from datetime import date
@@ -17,7 +18,7 @@ from counter import montar_codigo, montar_codigo_revisao
 from docx_to_pdf import conversao_disponivel, converter_docx_para_pdf_bytes
 from indice_fix import corrigir_indice, HEADINGS_TECNICA, HEADINGS_COMERCIAL
 from revisao_secao import montar_secao_revisao
-from descricao_tecnica_rascunho import montar_rascunho
+from descricao_tecnica_rascunho import montar_rascunho, CONSIDERACOES_PADRAO
 from descricao_tecnica_secao import montar_secao_descricao_tecnica
 from comparar_lpu import comparar_itens
 import db
@@ -74,7 +75,9 @@ CAMPOS_LIMPAVEIS = [
     "valor_total_extenso",
     "data_proposta",
     "observacoes_exclusao",
-    "descricao_tecnica",
+    "dt_consideracoes",
+    "dt_tabela_inicial",
+    "dt_editor",
     "_lpu_fingerprint",
     "escolha_revisao",
     "solicitacao_alteracao",
@@ -406,9 +409,18 @@ with st.expander("Revisar uma proposta existente (opcional)"):
                         st.session_state["objeto"] = dados_antigos.objeto or ""
                         st.session_state["endereco"] = dados_antigos.endereco or ""
                         st.session_state["cidade"] = dados_antigos.cidade or ""
-                        st.session_state["descricao_tecnica"] = (
-                            dados_antigos.descricao_tecnica or ""
-                        )
+                        try:
+                            _dt = json.loads(dados_antigos.descricao_tecnica or "{}")
+                        except Exception:
+                            _dt = {}
+                        if isinstance(_dt, dict) and _dt.get("consideracoes"):
+                            st.session_state["dt_consideracoes"] = _dt["consideracoes"]
+                        elif isinstance(dados_antigos.descricao_tecnica, str):
+                            st.session_state["dt_consideracoes"] = dados_antigos.descricao_tecnica
+                        # a tabela por item e refeita a partir da LPU nova +
+                        # glossario (os itens podem ter mudado na revisao).
+                        st.session_state.pop("dt_tabela_inicial", None)
+                        st.session_state.pop("dt_editor", None)
                     break
         st.rerun()
 
@@ -560,20 +572,71 @@ observacoes_exclusao = st.text_area(
 # ---------- 5. Descricao Tecnica ----------
 st.header("5. Descrição Técnica")
 st.caption(
-    "Rascunho montado a partir dos itens da LPU. Clique em preparar, edite o texto "
-    "à vontade (cada linha vira um parágrafo) e só depois gere as propostas. "
-    "Entra **só na Proposta Técnica**, logo depois da tabela de Especificações."
+    "Uma linha por item da LPU. Edite a coluna **Descrição técnica** e as "
+    "**Considerações gerais**. Entra **só na Proposta Técnica**, logo depois da "
+    f"tabela de Especificações. Glossário aprendido: **{db.contar_glossario()}** descrições."
 )
+
+with st.expander("Importar glossário de um arquivo (.xlsx / .csv)"):
+    st.caption(
+        "Duas colunas: **1ª** = descrição do item (como aparece na LPU), "
+        "**2ª** = descrição técnica redigida. Linha de cabeçalho é ignorada."
+    )
+    glo_file = st.file_uploader(
+        "Arquivo do glossário", type=["xlsx", "csv"],
+        key=f"glo_up_{st.session_state.uploader_version}",
+    )
+    if glo_file is not None and st.button("Importar para o glossário"):
+        try:
+            if glo_file.name.lower().endswith(".csv"):
+                df_glo = pd.read_csv(glo_file, header=None, dtype=str)
+            else:
+                df_glo = pd.read_excel(glo_file, header=None, dtype=str)
+            pares = []
+            for _, row in df_glo.iterrows():
+                a = ("" if pd.isna(row.iloc[0]) else str(row.iloc[0])).strip()
+                b = ("" if len(row) < 2 or pd.isna(row.iloc[1]) else str(row.iloc[1])).strip()
+                if a and b and a.lower() not in ("item", "descricao", "descrição", "item da lpu"):
+                    pares.append((a, b))
+            n = db.aprender_descricoes(pares)
+            st.success(f"{n} descrições importadas/atualizadas no glossário.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Não consegui ler o arquivo: {e}")
+
+consideracoes_dt = st.text_area(
+    "Considerações gerais (premissas, mobilização, normas) — vão no topo da seção",
+    key="dt_consideracoes",
+    height=110,
+)
+
 if st.button("Preparar / atualizar rascunho da descrição técnica", disabled=(dados_lpu is None)):
-    st.session_state["descricao_tecnica"] = montar_rascunho(itens_selecionados, dados_lpu)
+    st.session_state["dt_tabela_inicial"] = montar_rascunho(
+        itens_selecionados, dados_lpu, db.listar_glossario()
+    )
+    if not (st.session_state.get("dt_consideracoes") or "").strip():
+        st.session_state["dt_consideracoes"] = CONSIDERACOES_PADRAO
+    st.session_state.pop("dt_editor", None)
     st.rerun()
 
-if st.session_state.get("descricao_tecnica"):
-    st.text_area(
-        "Descrição técnica (edite livremente)",
-        key="descricao_tecnica",
-        height=380,
+descricao_tecnica_linhas = None
+if st.session_state.get("dt_tabela_inicial"):
+    df_dt = pd.DataFrame(
+        st.session_state["dt_tabela_inicial"], columns=["codigo", "item", "texto"]
     )
+    edicao_dt = st.data_editor(
+        df_dt,
+        key="dt_editor",
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "codigo": st.column_config.TextColumn("Código", disabled=True, width="small"),
+            "item": st.column_config.TextColumn("Item da LPU", disabled=True, width="medium"),
+            "texto": st.column_config.TextColumn("Descrição técnica", width="large"),
+        },
+    )
+    descricao_tecnica_linhas = edicao_dt.to_dict("records")
 elif dados_lpu is not None:
     st.info("Clique em **Preparar / atualizar rascunho da descrição técnica** para começar.")
 
@@ -589,7 +652,7 @@ gerar = st.button(
     type="primary",
     disabled=(
         dados_lpu is None
-        or not (st.session_state.get("descricao_tecnica") or "").strip()
+        or not st.session_state.get("dt_tabela_inicial")
         or bool(st.session_state.get("pendente_download"))
     ),
 )
@@ -608,7 +671,12 @@ if gerar:
         st.error("Preencha a abreviação do cliente.")
         st.stop()
 
-    descricao_tecnica_txt = (st.session_state.get("descricao_tecnica") or "").strip()
+    descricao_tecnica_linhas = descricao_tecnica_linhas or []
+    consideracoes_dt = (consideracoes_dt or "").strip()
+    descricao_tecnica_json = json.dumps(
+        {"consideracoes": consideracoes_dt, "itens": descricao_tecnica_linhas},
+        ensure_ascii=False,
+    )
 
     revisao_ativa = numero_pai_revisao is not None
 
@@ -682,7 +750,12 @@ if gerar:
             ctx["itens_tabela"] = tab_sub
 
             dt_sub = tpl.new_subdoc()
-            montar_secao_descricao_tecnica(dt_sub, descricao_tecnica_txt, prazo_execucao)
+            montar_secao_descricao_tecnica(
+                dt_sub,
+                consideracoes_dt,
+                [l.get("texto", "") for l in descricao_tecnica_linhas],
+                prazo_execucao,
+            )
             ctx["descricao_tecnica"] = dt_sub
         return ctx
 
@@ -736,7 +809,7 @@ if gerar:
         cidade=cidade,
         prazo_execucao=prazo_execucao,
         observacoes_exclusao=observacoes_exclusao,
-        descricao_tecnica=descricao_tecnica_txt,
+        descricao_tecnica=descricao_tecnica_json,
         # So o NOME dos arquivos fica registrado -- o conteudo nao e guardado
         # no banco (por isso o usuario precisa baixar logo apos gerar).
         lpu_nome_arquivo=lpu_file.name,
@@ -758,6 +831,24 @@ if gerar:
     else:
         db.salvar_proposta(numero=numero_proposta, **campos_comuns)
         db.salvar_imagens_proposta(numero_proposta, imagens_para_salvar)
+
+    # Aprendizado: guarda no glossario so os itens cuja descricao o usuario
+    # de fato editou (o texto final difere do rascunho automatico), pra nao
+    # poluir o glossario com as frases genericas.
+    _iniciais = {
+        (l.get("codigo"), l.get("item")): l.get("texto")
+        for l in st.session_state.get("dt_tabela_inicial", [])
+    }
+    _editados = [
+        (l.get("item", ""), l.get("texto", ""))
+        for l in descricao_tecnica_linhas
+        if l.get("texto", "") != _iniciais.get((l.get("codigo"), l.get("item")))
+    ]
+    if _editados:
+        try:
+            db.aprender_descricoes(_editados)
+        except Exception as e:
+            st.warning(f"Não consegui atualizar o glossário de aprendizado: {e}")
 
     st.session_state["pendente_download"] = {
         "codigo": codigo_proposta,

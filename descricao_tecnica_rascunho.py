@@ -162,23 +162,32 @@ def _frase_item(item: dict) -> str:
     )
 
 
-INTRO = (
+CONSIDERACOES_PADRAO = (
     "Os serviços preliminares terão início a partir da mobilização da equipe e "
     "dos materiais em campo. Todos os serviços serão executados conforme projeto "
     "executivo, normas técnicas vigentes (ABNT NBR) e boas práticas construtivas."
 )
 
 
-def montar_rascunho(itens_selecionados: list, dados_lpu: dict | None = None) -> str:
-    """Retorna o texto do rascunho: uma linha (paragrafo) por item, com um
-    paragrafo de introducao no topo."""
-    linhas = [INTRO, ""]
-    vistos = set()
+def montar_rascunho(itens_selecionados: list, dados_lpu: dict | None = None,
+                    glossario: list | None = None) -> list:
+    """Retorna [{codigo, item, texto}] -- uma entrada por item da LPU.
+
+    Para cada item tenta, nesta ordem:
+      1. descricao ja aprendida no glossario (exata ou aproximada);
+      2. regra por palavra-chave (REGRAS);
+      3. frase generica.
+    O `codigo` volta so como referencia na tela; NAO entra no documento.
+    """
+    from descricao_tecnica_glossario import casar
+
+    linhas = []
     for item in itens_selecionados or []:
-        frase = _frase_item(item)
-        if frase in vistos:
-            continue
-        vistos.add(frase)
-        codigo = (item.get("codigo") or "").strip()
-        linhas.append(f"{codigo} — {frase}" if codigo else frase)
-    return "\n".join(linhas).strip()
+        desc = (item.get("descricao") or "").strip()
+        texto = casar(desc, glossario) if glossario else None
+        if not texto:
+            texto = _frase_item(item)
+        linhas.append(
+            {"codigo": (item.get("codigo") or "").strip(), "item": desc, "texto": texto}
+        )
+    return linhas

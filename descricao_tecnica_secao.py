@@ -6,14 +6,23 @@ na Proposta Tecnica.
 Comeca em pagina nova, com titulo estilo Heading 1 e bookmark _Toc190957976
 (reaproveitado no template tecnica para a entrada do Sumario). No fim, uma
 linha de "Prazo de execucao" (a Tecnica nao tem a pagina de Prazo e Preco).
+
+A formatacao do corpo replica a do texto corrido do documento original:
+Arial Narrow 12pt, cor 1B3462, justificado, com o mesmo recuo.
 """
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, Twips
+from docx.shared import Emu, Pt, RGBColor, Twips
 
-from revisao_secao import RECUO_ESQUERDO_PADRAO, RECUO_PRIMEIRA_LINHA_PADRAO
+FONT_NAME = "Arial Narrow"
+FONT_SIZE = Pt(12)
+COR_TEXTO = RGBColor(0x1B, 0x34, 0x62)
 
-FONT_NAME = "Trebuchet MS"
+# Mesmos recuos do texto corrido do modelo (ex: secao "Escopo").
+RECUO_ESQUERDO = Emu(1080135)
+RECUO_PRIMEIRA_LINHA = Emu(291465)
+
 BOOKMARK_NAME = "_Toc190957976"
 BOOKMARK_ID = 900
 
@@ -34,41 +43,54 @@ def _envolver_com_bookmark(paragraph, nome=BOOKMARK_NAME, bm_id=BOOKMARK_ID):
     p.append(end)
 
 
-def montar_secao_descricao_tecnica(subdoc, texto: str, prazo_execucao: str = ""):
+def _paragrafo_corpo(subdoc):
+    p = subdoc.add_paragraph()
+    p.style = "Normal"
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p.paragraph_format.left_indent = RECUO_ESQUERDO
+    p.paragraph_format.first_line_indent = RECUO_PRIMEIRA_LINHA
+    p.paragraph_format.space_after = Pt(6)
+    return p
+
+
+def _formatar(run, bold=False):
+    run.font.name = FONT_NAME
+    run.font.size = FONT_SIZE
+    run.font.color.rgb = COR_TEXTO
+    run.bold = bold
+
+
+def montar_secao_descricao_tecnica(subdoc, consideracoes: str = "",
+                                   itens_descricoes: list = None,
+                                   prazo_execucao: str = ""):
+    """consideracoes: texto livre de premissas (um paragrafo por linha).
+    itens_descricoes: lista de strings, uma descricao tecnica por item da LPU
+    (sem o codigo na frente)."""
     titulo = subdoc.add_paragraph()
-    titulo.paragraph_format.page_break_before = True
-    titulo.paragraph_format.left_indent = Twips(1701)
     try:
         titulo.style = "Heading 1"
     except KeyError:
         pass
-    run_t = titulo.add_run("Descrição Técnica")
-    run_t.bold = True
+    titulo.paragraph_format.page_break_before = True
+    titulo.paragraph_format.left_indent = Twips(1701)
+    titulo.add_run("Descrição Técnica")
     _envolver_com_bookmark(titulo)
 
-    for linha in (texto or "").split("\n"):
+    for linha in (consideracoes or "").split("\n"):
         linha = linha.strip()
-        if not linha:
-            continue
-        p = subdoc.add_paragraph()
-        p.paragraph_format.left_indent = RECUO_ESQUERDO_PADRAO
-        p.paragraph_format.first_line_indent = RECUO_PRIMEIRA_LINHA_PADRAO
-        p.paragraph_format.space_after = Pt(6)
-        run = p.add_run(linha)
-        run.font.name = FONT_NAME
-        run.font.size = Pt(11)
+        if linha:
+            _formatar(_paragrafo_corpo(subdoc).add_run(linha))
+
+    for descricao in itens_descricoes or []:
+        descricao = (descricao or "").strip()
+        if descricao:
+            _formatar(_paragrafo_corpo(subdoc).add_run(descricao))
 
     if prazo_execucao:
-        subdoc.add_paragraph()
-        p = subdoc.add_paragraph()
-        p.paragraph_format.left_indent = RECUO_ESQUERDO_PADRAO
-        r1 = p.add_run("Prazo de execução: ")
-        r1.bold = True
-        r1.font.name = FONT_NAME
-        r1.font.size = Pt(11)
-        r2 = p.add_run(
+        _formatar(_paragrafo_corpo(subdoc).add_run(""))  # espacamento
+        p = _paragrafo_corpo(subdoc)
+        _formatar(p.add_run("Prazo de execução: "), bold=True)
+        _formatar(p.add_run(
             f"{prazo_execucao} a partir do aceite da proposta e mobilização "
             "da equipe e materiais."
-        )
-        r2.font.name = FONT_NAME
-        r2.font.size = Pt(11)
+        ))
