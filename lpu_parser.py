@@ -67,8 +67,16 @@ def ler_itens_orcamento(caminho_arquivo: str) -> list:
     headers = [c.value for c in ws[header_row]]
     col = {h: idx + 1 for idx, h in enumerate(headers) if h}
 
-    col_codigo = col.get("Código") or col.get("Codigo")
+    # Dois layouts de LPU:
+    #   Civil    -> "Código" = codigo, "Item" = descricao
+    #   Elétrica -> "Item"   = codigo, "Descrição" = descricao (nao tem "Código")
+    col_codigo_civil = col.get("Código") or col.get("Codigo")
     col_item = col.get("Item")
+    col_descricao = col.get("Descrição") or col.get("Descricao")
+    if col_codigo_civil:
+        col_codigo, col_desc = col_codigo_civil, col_item
+    else:
+        col_codigo, col_desc = col_item, col_descricao
     col_qtd = col.get("Qtd.") or col.get("Qtd")
     col_unid = col.get("Unid.") or col.get("Unid")
     col_obs = col.get("Observações de RFP") or col.get("Observacoes de RFP")
@@ -81,7 +89,7 @@ def ler_itens_orcamento(caminho_arquivo: str) -> list:
             continue
 
         codigo = row[col_codigo - 1].value if col_codigo else ""
-        descricao = row[col_item - 1].value if col_item else ""
+        descricao = row[col_desc - 1].value if col_desc else ""
         unidade = row[col_unid - 1].value if col_unid else ""
         obs = row[col_obs - 1].value if col_obs else ""
 

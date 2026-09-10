@@ -48,6 +48,37 @@ def _remove(el):
     el.getparent().remove(el)
 
 
+def _vazio(p):
+    """Paragrafo sem texto, sem imagem e sem sectPr -- so ocupa espaco."""
+    if _texto(p).strip():
+        return False
+    if p.find(".//" + _q("drawing")) is not None or p.find(".//" + _q("pict")) is not None:
+        return False
+    pPr = p.find(_q("pPr"))
+    return not (pPr is not None and pPr.find(_q("sectPr")) is not None)
+
+
+def _definir_titulo_capa(root, texto):
+    """Troca o titulo da capa ("Proposta Tecnica Comercial") pelo `texto`."""
+    for p in root.iter(_q("p")):
+        if _texto(p).strip() == "Proposta Técnica Comercial":
+            ts = list(p.iter(_q("t")))
+            if ts:
+                ts[0].text = texto
+                for t in ts[1:]:
+                    t.text = ""
+            return
+
+
+def _quebra_pagina_antes(p):
+    pPr = p.find(_q("pPr"))
+    if pPr is None:
+        pPr = etree.Element(_q("pPr"))
+        p.insert(0, pPr)
+    if pPr.find(_q("pageBreakBefore")) is None:
+        pPr.insert(0, etree.Element(_q("pageBreakBefore")))
+
+
 def _mapa_bookmarks(root):
     return {
         bm.get(_q("id")): bm.get(_q("name"))
@@ -105,6 +136,8 @@ def _garantir_placeholder(root):
 def _tecnica(root):
     body = root.find(_q("body"))
 
+    _definir_titulo_capa(root, "Proposta Técnica")
+
     # 1. apaga a secao "Prazo e Preco" (do Heading 2 ate antes de "Condicoes Gerais")
     apagando = False
     for filho in list(body):
@@ -152,6 +185,8 @@ def _tecnica(root):
 def _comercial(root):
     body = root.find(_q("body"))
 
+    _definir_titulo_capa(root, "Proposta Comercial")
+
     alvos_txt = {
         "{{p itens_tabela}}",
         "Observações - itens exclusos desta proposta:",
@@ -164,6 +199,24 @@ def _comercial(root):
             _remove(p)
         elif _is_h1(p) and "specifica" in txt.lower():
             _remove(p)
+
+    # Sem "Especificacoes" / tabela / Observacoes / Descricao Tecnica sobra um
+    # monte de paragrafo vazio entre "Escopo" e "Prazo e Preco" -> pagina em
+    # branco. Remove os vazios e poe a quebra de pagina no proprio "Prazo e
+    # Preco" (mantendo {{p secao_revisao}}, que ainda renderiza em revisoes).
+    for p in body.findall(_q("p")):
+        if _is_h2(p) and _texto(p).strip().startswith("Prazo e Pre"):
+            _quebra_pagina_antes(p)
+            for anterior in list(p.itersiblings(preceding=True)):
+                if anterior.tag != _q("p"):
+                    break
+                if _texto(anterior).strip() == "{{p secao_revisao}}":
+                    continue
+                if _vazio(anterior):
+                    _remove(anterior)
+                    continue
+                break
+            break
 
     # (o start orfao do bookmark 6, perdido junto com o heading Especificacoes,
     #  e recriado por _reparar_bookmarks_orfaos)

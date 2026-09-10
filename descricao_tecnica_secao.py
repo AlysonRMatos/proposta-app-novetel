@@ -13,15 +13,18 @@ Arial Narrow 12pt, cor 1B3462, justificado, com o mesmo recuo.
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Emu, Pt, RGBColor, Twips
+from docx.shared import Pt, RGBColor, Twips
 
 FONT_NAME = "Arial Narrow"
 FONT_SIZE = Pt(12)
 COR_TEXTO = RGBColor(0x1B, 0x34, 0x62)
 
-# Mesmos recuos do texto corrido do modelo (ex: secao "Escopo").
-RECUO_ESQUERDO = Emu(1080135)
-RECUO_PRIMEIRA_LINHA = Emu(291465)
+# Mesmos recuos do texto corrido do modelo (secao "Escopo"): a pagina tem
+# margem 0 no .docx, entao o recuo DIREITO tambem precisa ser explicito senao
+# o texto encosta na borda da folha.
+RECUO_ESQUERDO = Twips(1701)
+RECUO_DIREITO = Twips(1137)
+RECUO_PRIMEIRA_LINHA = Twips(459)
 
 BOOKMARK_NAME = "_Toc190957976"
 BOOKMARK_ID = 900
@@ -48,6 +51,7 @@ def _paragrafo_corpo(subdoc):
     p.style = "Normal"
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.left_indent = RECUO_ESQUERDO
+    p.paragraph_format.right_indent = RECUO_DIREITO
     p.paragraph_format.first_line_indent = RECUO_PRIMEIRA_LINHA
     p.paragraph_format.space_after = Pt(6)
     return p
