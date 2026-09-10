@@ -76,8 +76,7 @@ CAMPOS_LIMPAVEIS = [
     "data_proposta",
     "observacoes_exclusao",
     "dt_consideracoes",
-    "dt_tabela_inicial",
-    "dt_editor",
+    "dt_descricao",
     "_lpu_fingerprint",
     "escolha_revisao",
     "solicitacao_alteracao",
@@ -413,14 +412,13 @@ with st.expander("Revisar uma proposta existente (opcional)"):
                             _dt = json.loads(dados_antigos.descricao_tecnica or "{}")
                         except Exception:
                             _dt = {}
-                        if isinstance(_dt, dict) and _dt.get("consideracoes"):
-                            st.session_state["dt_consideracoes"] = _dt["consideracoes"]
+                        if isinstance(_dt, dict):
+                            if _dt.get("consideracoes"):
+                                st.session_state["dt_consideracoes"] = _dt["consideracoes"]
+                            if _dt.get("descricao"):
+                                st.session_state["dt_descricao"] = _dt["descricao"]
                         elif isinstance(dados_antigos.descricao_tecnica, str):
                             st.session_state["dt_consideracoes"] = dados_antigos.descricao_tecnica
-                        # a tabela por item e refeita a partir da LPU nova
-                        # (os itens podem ter mudado na revisao).
-                        st.session_state.pop("dt_tabela_inicial", None)
-                        st.session_state.pop("dt_editor", None)
                     break
         st.rerun()
 
@@ -572,9 +570,8 @@ observacoes_exclusao = st.text_area(
 # ---------- 5. Descricao Tecnica ----------
 st.header("5. Descrição Técnica")
 st.caption(
-    "Uma linha por item da LPU. Edite a coluna **Descrição técnica** e as "
-    "**Considerações gerais**. Entra **só na Proposta Técnica**, logo depois da "
-    "tabela de Especificações."
+    "Um parágrafo por linha. Edite os campos livremente antes de gerar. "
+    "Entra **só na Proposta Técnica**, logo depois da tabela de Especificações."
 )
 
 consideracoes_dt = st.text_area(
@@ -583,42 +580,26 @@ consideracoes_dt = st.text_area(
     height=110,
 )
 
-def _preparar_rascunho_dt(itens, lpu):
+def _preparar_rascunho_dt(itens):
     # Roda como callback (antes do rerun), quando ainda e permitido escrever
-    # em chaves de widget como "dt_consideracoes"/"dt_editor".
-    st.session_state["dt_tabela_inicial"] = montar_rascunho(itens, lpu)
+    # nas chaves de widget "dt_consideracoes"/"dt_descricao".
     if not (st.session_state.get("dt_consideracoes") or "").strip():
         st.session_state["dt_consideracoes"] = CONSIDERACOES_PADRAO
-    st.session_state.pop("dt_editor", None)
+    st.session_state["dt_descricao"] = montar_rascunho(itens)
 
 
 st.button(
     "Preparar / atualizar rascunho da descrição técnica",
     disabled=(dados_lpu is None),
     on_click=_preparar_rascunho_dt,
-    args=(itens_selecionados, dados_lpu),
+    args=(itens_selecionados,),
 )
 
-descricao_tecnica_linhas = None
-if st.session_state.get("dt_tabela_inicial"):
-    df_dt = pd.DataFrame(
-        st.session_state["dt_tabela_inicial"], columns=["codigo", "item", "texto"]
-    )
-    edicao_dt = st.data_editor(
-        df_dt,
-        key="dt_editor",
-        hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
-        column_config={
-            "codigo": st.column_config.TextColumn("Código", disabled=True, width="small"),
-            "item": st.column_config.TextColumn("Item da LPU", disabled=True, width="medium"),
-            "texto": st.column_config.TextColumn("Descrição técnica", width="large"),
-        },
-    )
-    descricao_tecnica_linhas = edicao_dt.to_dict("records")
-elif dados_lpu is not None:
-    st.info("Clique em **Preparar / atualizar rascunho da descrição técnica** para começar.")
+descricao_dt = st.text_area(
+    "Descrição técnica (um parágrafo por linha) — vem logo depois das considerações",
+    key="dt_descricao",
+    height=320,
+)
 
 # ---------- 6. Gerar ----------
 st.header("6. Gerar propostas")
@@ -632,7 +613,7 @@ gerar = st.button(
     type="primary",
     disabled=(
         dados_lpu is None
-        or not st.session_state.get("dt_tabela_inicial")
+        or not (st.session_state.get("dt_descricao") or "").strip()
         or bool(st.session_state.get("pendente_download"))
     ),
 )
@@ -651,10 +632,10 @@ if gerar:
         st.error("Preencha a abreviação do cliente.")
         st.stop()
 
-    descricao_tecnica_linhas = descricao_tecnica_linhas or []
     consideracoes_dt = (consideracoes_dt or "").strip()
+    descricao_dt = (descricao_dt or "").strip()
     descricao_tecnica_json = json.dumps(
-        {"consideracoes": consideracoes_dt, "itens": descricao_tecnica_linhas},
+        {"consideracoes": consideracoes_dt, "descricao": descricao_dt},
         ensure_ascii=False,
     )
 
@@ -733,7 +714,7 @@ if gerar:
             montar_secao_descricao_tecnica(
                 dt_sub,
                 consideracoes_dt,
-                [l.get("texto", "") for l in descricao_tecnica_linhas],
+                descricao_dt,
                 prazo_execucao,
             )
             ctx["descricao_tecnica"] = dt_sub

@@ -61,11 +61,11 @@ def _formatar(run, bold=False):
 
 
 def montar_secao_descricao_tecnica(subdoc, consideracoes: str = "",
-                                   itens_descricoes: list = None,
+                                   descricao_itens: str = "",
                                    prazo_execucao: str = ""):
     """consideracoes: texto livre de premissas (um paragrafo por linha).
-    itens_descricoes: lista de strings, uma descricao tecnica por item da LPU
-    (sem o codigo na frente)."""
+    descricao_itens: texto livre da descricao tecnica dos itens (um paragrafo
+    por linha)."""
     titulo = subdoc.add_paragraph()
     try:
         titulo.style = "Heading 1"
@@ -81,10 +81,10 @@ def montar_secao_descricao_tecnica(subdoc, consideracoes: str = "",
         if linha:
             _formatar(_paragrafo_corpo(subdoc).add_run(linha))
 
-    for descricao in itens_descricoes or []:
-        descricao = (descricao or "").strip()
-        if descricao:
-            _formatar(_paragrafo_corpo(subdoc).add_run(descricao))
+    for linha in (descricao_itens or "").split("\n"):
+        linha = linha.strip()
+        if linha:
+            _formatar(_paragrafo_corpo(subdoc).add_run(linha))
 
     if prazo_execucao:
         _formatar(_paragrafo_corpo(subdoc).add_run(""))  # espacamento

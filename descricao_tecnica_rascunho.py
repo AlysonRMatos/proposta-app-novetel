@@ -169,22 +169,15 @@ CONSIDERACOES_PADRAO = (
 )
 
 
-def montar_rascunho(itens_selecionados: list, dados_lpu: dict | None = None) -> list:
-    """Retorna [{codigo, item, texto}] -- uma entrada por item da LPU.
-
-    Para cada item o texto vem de: regra por palavra-chave (REGRAS) e, se
-    nenhuma casar, uma frase generica. E so um ponto de partida -- o usuario
-    edita tudo na tela. O `codigo` volta so como referencia; NAO entra no
-    documento.
+def montar_rascunho(itens_selecionados: list) -> str:
+    """Texto inicial da descricao tecnica: uma frase por item da LPU, um
+    paragrafo por linha. Para cada item a frase vem de uma regra por
+    palavra-chave (REGRAS) e, se nenhuma casar, de uma frase generica.
+    E so um ponto de partida -- o usuario edita tudo no campo antes de gerar.
     """
     linhas = []
     for item in itens_selecionados or []:
-        desc = (item.get("descricao") or "").strip()
-        linhas.append(
-            {
-                "codigo": (item.get("codigo") or "").strip(),
-                "item": desc,
-                "texto": _frase_item(item),
-            }
-        )
-    return linhas
+        frase = _frase_item(item).strip()
+        if frase:
+            linhas.append(frase)
+    return "\n".join(linhas)
