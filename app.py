@@ -583,14 +583,21 @@ consideracoes_dt = st.text_area(
     height=110,
 )
 
-if st.button("Preparar / atualizar rascunho da descrição técnica", disabled=(dados_lpu is None)):
-    st.session_state["dt_tabela_inicial"] = montar_rascunho(
-        itens_selecionados, dados_lpu
-    )
+def _preparar_rascunho_dt(itens, lpu):
+    # Roda como callback (antes do rerun), quando ainda e permitido escrever
+    # em chaves de widget como "dt_consideracoes"/"dt_editor".
+    st.session_state["dt_tabela_inicial"] = montar_rascunho(itens, lpu)
     if not (st.session_state.get("dt_consideracoes") or "").strip():
         st.session_state["dt_consideracoes"] = CONSIDERACOES_PADRAO
     st.session_state.pop("dt_editor", None)
-    st.rerun()
+
+
+st.button(
+    "Preparar / atualizar rascunho da descrição técnica",
+    disabled=(dados_lpu is None),
+    on_click=_preparar_rascunho_dt,
+    args=(itens_selecionados, dados_lpu),
+)
 
 descricao_tecnica_linhas = None
 if st.session_state.get("dt_tabela_inicial"):
