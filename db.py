@@ -170,19 +170,6 @@ def _criar_tabelas(engine):
                 """
             )
         )
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS glossario_descricao_tecnica (
-                    chave TEXT PRIMARY KEY,
-                    descricao_lpu TEXT NOT NULL,
-                    texto TEXT NOT NULL,
-                    usos INTEGER NOT NULL DEFAULT 1,
-                    atualizado_em TEXT NOT NULL
-                )
-                """
-            )
-        )
 
     for coluna, tipo in _CAMPOS_ARQUIVOS + _CAMPOS_FORMULARIO:
         _adicionar_coluna_se_necessario(engine, "propostas", coluna, tipo)
@@ -603,64 +590,3 @@ def limpar_arquivos_grandes(confirmar: bool = False) -> dict:
             )
         )
     return {"propostas_limpas": r1.rowcount, "revisoes_limpas": r2.rowcount}
-
-
-# ---------------------------------------------------------------------
-# Glossario de descricoes tecnicas (aprendizado)
-# ---------------------------------------------------------------------
-
-def listar_glossario() -> list:
-    engine = _get_engine()
-    with engine.connect() as conn:
-        return conn.execute(
-            text(
-                "SELECT chave, descricao_lpu, texto, usos FROM glossario_descricao_tecnica "
-                "ORDER BY usos DESC"
-            )
-        ).fetchall()
-
-
-def contar_glossario() -> int:
-    engine = _get_engine()
-    with engine.connect() as conn:
-        return conn.execute(
-            text("SELECT COUNT(*) FROM glossario_descricao_tecnica")
-        ).scalar() or 0
-
-
-def aprender_descricoes(pares) -> int:
-    """pares: iteravel de (descricao_lpu, texto). Insere ou atualiza o
-    glossario. Retorna quantos pares foram gravados."""
-    from descricao_tecnica_glossario import normalizar
-
-    agora = datetime.now(timezone.utc).isoformat()
-    limpos = []
-    for descricao_lpu, texto in pares:
-        descricao_lpu = (descricao_lpu or "").strip()
-        texto = (texto or "").strip()
-        chave = normalizar(descricao_lpu)
-        if chave and texto:
-            limpos.append({"chave": chave, "descricao_lpu": descricao_lpu,
-                           "texto": texto, "atualizado_em": agora})
-    if not limpos:
-        return 0
-
-    engine = _get_engine()
-    with engine.begin() as conn:
-        for p in limpos:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO glossario_descricao_tecnica
-                        (chave, descricao_lpu, texto, usos, atualizado_em)
-                    VALUES (:chave, :descricao_lpu, :texto, 1, :atualizado_em)
-                    ON CONFLICT (chave) DO UPDATE SET
-                        descricao_lpu = EXCLUDED.descricao_lpu,
-                        texto = EXCLUDED.texto,
-                        usos = glossario_descricao_tecnica.usos + 1,
-                        atualizado_em = EXCLUDED.atualizado_em
-                    """
-                ),
-                p,
-            )
-    return len(limpos)

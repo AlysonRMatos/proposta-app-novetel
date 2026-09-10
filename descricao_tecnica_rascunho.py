@@ -169,25 +169,22 @@ CONSIDERACOES_PADRAO = (
 )
 
 
-def montar_rascunho(itens_selecionados: list, dados_lpu: dict | None = None,
-                    glossario: list | None = None) -> list:
+def montar_rascunho(itens_selecionados: list, dados_lpu: dict | None = None) -> list:
     """Retorna [{codigo, item, texto}] -- uma entrada por item da LPU.
 
-    Para cada item tenta, nesta ordem:
-      1. descricao ja aprendida no glossario (exata ou aproximada);
-      2. regra por palavra-chave (REGRAS);
-      3. frase generica.
-    O `codigo` volta so como referencia na tela; NAO entra no documento.
+    Para cada item o texto vem de: regra por palavra-chave (REGRAS) e, se
+    nenhuma casar, uma frase generica. E so um ponto de partida -- o usuario
+    edita tudo na tela. O `codigo` volta so como referencia; NAO entra no
+    documento.
     """
-    from descricao_tecnica_glossario import casar
-
     linhas = []
     for item in itens_selecionados or []:
         desc = (item.get("descricao") or "").strip()
-        texto = casar(desc, glossario) if glossario else None
-        if not texto:
-            texto = _frase_item(item)
         linhas.append(
-            {"codigo": (item.get("codigo") or "").strip(), "item": desc, "texto": texto}
+            {
+                "codigo": (item.get("codigo") or "").strip(),
+                "item": desc,
+                "texto": _frase_item(item),
+            }
         )
     return linhas

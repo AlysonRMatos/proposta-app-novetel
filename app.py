@@ -417,8 +417,8 @@ with st.expander("Revisar uma proposta existente (opcional)"):
                             st.session_state["dt_consideracoes"] = _dt["consideracoes"]
                         elif isinstance(dados_antigos.descricao_tecnica, str):
                             st.session_state["dt_consideracoes"] = dados_antigos.descricao_tecnica
-                        # a tabela por item e refeita a partir da LPU nova +
-                        # glossario (os itens podem ter mudado na revisao).
+                        # a tabela por item e refeita a partir da LPU nova
+                        # (os itens podem ter mudado na revisao).
                         st.session_state.pop("dt_tabela_inicial", None)
                         st.session_state.pop("dt_editor", None)
                     break
@@ -574,35 +574,8 @@ st.header("5. Descrição Técnica")
 st.caption(
     "Uma linha por item da LPU. Edite a coluna **Descrição técnica** e as "
     "**Considerações gerais**. Entra **só na Proposta Técnica**, logo depois da "
-    f"tabela de Especificações. Glossário aprendido: **{db.contar_glossario()}** descrições."
+    "tabela de Especificações."
 )
-
-with st.expander("Importar glossário de um arquivo (.xlsx / .csv)"):
-    st.caption(
-        "Duas colunas: **1ª** = descrição do item (como aparece na LPU), "
-        "**2ª** = descrição técnica redigida. Linha de cabeçalho é ignorada."
-    )
-    glo_file = st.file_uploader(
-        "Arquivo do glossário", type=["xlsx", "csv"],
-        key=f"glo_up_{st.session_state.uploader_version}",
-    )
-    if glo_file is not None and st.button("Importar para o glossário"):
-        try:
-            if glo_file.name.lower().endswith(".csv"):
-                df_glo = pd.read_csv(glo_file, header=None, dtype=str)
-            else:
-                df_glo = pd.read_excel(glo_file, header=None, dtype=str)
-            pares = []
-            for _, row in df_glo.iterrows():
-                a = ("" if pd.isna(row.iloc[0]) else str(row.iloc[0])).strip()
-                b = ("" if len(row) < 2 or pd.isna(row.iloc[1]) else str(row.iloc[1])).strip()
-                if a and b and a.lower() not in ("item", "descricao", "descrição", "item da lpu"):
-                    pares.append((a, b))
-            n = db.aprender_descricoes(pares)
-            st.success(f"{n} descrições importadas/atualizadas no glossário.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Não consegui ler o arquivo: {e}")
 
 consideracoes_dt = st.text_area(
     "Considerações gerais (premissas, mobilização, normas) — vão no topo da seção",
@@ -612,7 +585,7 @@ consideracoes_dt = st.text_area(
 
 if st.button("Preparar / atualizar rascunho da descrição técnica", disabled=(dados_lpu is None)):
     st.session_state["dt_tabela_inicial"] = montar_rascunho(
-        itens_selecionados, dados_lpu, db.listar_glossario()
+        itens_selecionados, dados_lpu
     )
     if not (st.session_state.get("dt_consideracoes") or "").strip():
         st.session_state["dt_consideracoes"] = CONSIDERACOES_PADRAO
@@ -831,24 +804,6 @@ if gerar:
     else:
         db.salvar_proposta(numero=numero_proposta, **campos_comuns)
         db.salvar_imagens_proposta(numero_proposta, imagens_para_salvar)
-
-    # Aprendizado: guarda no glossario so os itens cuja descricao o usuario
-    # de fato editou (o texto final difere do rascunho automatico), pra nao
-    # poluir o glossario com as frases genericas.
-    _iniciais = {
-        (l.get("codigo"), l.get("item")): l.get("texto")
-        for l in st.session_state.get("dt_tabela_inicial", [])
-    }
-    _editados = [
-        (l.get("item", ""), l.get("texto", ""))
-        for l in descricao_tecnica_linhas
-        if l.get("texto", "") != _iniciais.get((l.get("codigo"), l.get("item")))
-    ]
-    if _editados:
-        try:
-            db.aprender_descricoes(_editados)
-        except Exception as e:
-            st.warning(f"Não consegui atualizar o glossário de aprendizado: {e}")
 
     st.session_state["pendente_download"] = {
         "codigo": codigo_proposta,
