@@ -67,6 +67,7 @@ if "uploader_version" not in st.session_state:
 CAMPOS_LIMPAVEIS = [
     "cliente",
     "abreviacao_cliente",
+    "_cliente_abrev_origem",
     "escopo_titulo",
     "cidade",
     "endereco",
@@ -509,17 +510,23 @@ with st.expander("Revisar uma proposta existente (opcional)"):
 # ---------- 2. Dados da proposta ----------
 st.header("2. Dados da proposta")
 col1, col2 = st.columns(2)
-def _atualizar_abreviacao_sugerida():
-    st.session_state["abreviacao_cliente"] = obter_abreviacao(st.session_state.get("cliente", ""))
-
 
 with col1:
     cliente = st.text_input(
         "Cliente",
         placeholder="Ex: Shopee",
         key="cliente",
-        on_change=_atualizar_abreviacao_sugerida,
     )
+
+    # Sugere a abreviacao conhecida (clientes.py) sempre que o Cliente muda.
+    # Feito aqui -- antes do widget "abreviacao_cliente" abaixo ser
+    # instanciado nesta execucao -- em vez de via on_change, que nao estava
+    # disparando de forma confiavel (o valor sugerido ja sai certo nesta
+    # mesma tela, sem depender de outro rerun).
+    if st.session_state.get("_cliente_abrev_origem") != cliente:
+        st.session_state["_cliente_abrev_origem"] = cliente
+        st.session_state["abreviacao_cliente"] = obter_abreviacao(cliente)
+
     abreviacao_cliente = st.text_input(
         "Abreviação do cliente (usada no código da proposta)",
         placeholder="Ex: SHO",
