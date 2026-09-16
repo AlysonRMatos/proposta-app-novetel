@@ -87,15 +87,29 @@ CAMPOS_LIMPAVEIS = [
 MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MIME_PDF = "application/pdf"
 
+
+def _limpar_formulario():
+    """Reseta tudo pra comecar uma proposta nova: campos do formulario,
+    justificativas de itens da revisao (chaves dinamicas motivo_*), o aviso
+    de download pendente (o usuario esta abandonando essa geracao de
+    proposito) e os uploaders (LPU/imagens/tabela de itens, via a troca de
+    key pelo numero de versao)."""
+    for campo in CAMPOS_LIMPAVEIS:
+        st.session_state.pop(campo, None)
+    for chave in list(st.session_state.keys()):
+        if chave.startswith("motivo_"):
+            st.session_state.pop(chave, None)
+    st.session_state.pop("pendente_download", None)
+    st.session_state["uploader_version"] = st.session_state.get("uploader_version", 0) + 1
+
+
 col_titulo, col_limpar = st.columns([4, 1])
 with col_titulo:
     st.title("Gerador de Propostas Tecnicas")
 with col_limpar:
     st.write("")
     if st.button("Limpar todos os campos"):
-        for campo in CAMPOS_LIMPAVEIS:
-            st.session_state.pop(campo, None)
-        st.session_state["uploader_version"] += 1
+        _limpar_formulario()
         st.rerun()
 
 if not (os.path.exists(TEMPLATE_TECNICA_PATH) and os.path.exists(TEMPLATE_COMERCIAL_PATH)):
@@ -145,10 +159,7 @@ if pendente:
 
     if all(a["baixado"] for a in pendente["arquivos"]):
         st.success("Arquivos baixados. Liberando os campos para a próxima proposta...")
-        for campo in CAMPOS_LIMPAVEIS:
-            st.session_state.pop(campo, None)
-        st.session_state["uploader_version"] += 1
-        st.session_state.pop("pendente_download", None)
+        _limpar_formulario()
         st.rerun()
     else:
         faltam = [a["rotulo"] for a in pendente["arquivos"] if not a["baixado"]]
