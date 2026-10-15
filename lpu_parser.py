@@ -1,7 +1,13 @@
 """
 Leitura e interpretacao das planilhas LPU (Lista de Precos Unitarios).
+
+read_only=True no load_workbook: a planilha carrega so o necessario pra
+iterar (sem estilos/formatacao/imagens), o que e dezenas de vezes mais
+rapido nas LPUs reais -- a aba "Capa", por exemplo, costuma ter uma area
+"vazia" formatada ate a linha 1000 que o modo normal processa inteira.
+Abre o arquivo uma unica vez (antes, capa/itens/valor total reabriam cada
+uma do zero) e le a aba orcamentaria numa unica passada.
 """
-import re
 import openpyxl
 
 
@@ -26,8 +32,7 @@ def _achar_valor(ws, rotulo: str):
     return None
 
 
-def ler_dados_capa(caminho_arquivo: str) -> dict:
-    wb = openpyxl.load_workbook(caminho_arquivo, data_only=True)
+def _ler_dados_capa(wb) -> dict:
     if "Capa" not in wb.sheetnames:
         return {}
     ws = wb["Capa"]
@@ -54,13 +59,14 @@ def _achar_aba_orcamentaria(wb):
     return None
 
 
-def ler_itens_orcamento(caminho_arquivo: str) -> list:
-    """Retorna apenas os itens-folha com quantidade preenchida (> 0),
-    que sao os que efetivamente serao executados."""
-    wb = openpyxl.load_workbook(caminho_arquivo, data_only=True)
+def _ler_orcamento(wb):
+    """Le a aba orcamentaria numa unica passada: os itens-folha com
+    quantidade preenchida (> 0 -- os que serao executados) e o valor total
+    com BDI (soma das linhas de Nivel 1, as categorias-raiz). Retorna
+    (itens, valor_total_bdi)."""
     nome_aba = _achar_aba_orcamentaria(wb)
     if not nome_aba:
-        return []
+        return [], None
     ws = wb[nome_aba]
 
     header_row = 1
@@ -80,9 +86,19 @@ def ler_itens_orcamento(caminho_arquivo: str) -> list:
     col_qtd = col.get("Qtd.") or col.get("Qtd")
     col_unid = col.get("Unid.") or col.get("Unid")
     col_obs = col.get("Observações de RFP") or col.get("Observacoes de RFP")
+    col_nivel = col.get("Nível") or col.get("Nivel")
+    col_bdi = col.get("Valor total + BDI")
 
     itens = []
+    total = 0.0
+    encontrou_total = False
     for row in ws.iter_rows(min_row=header_row + 1):
+        if col_nivel and col_bdi and row[col_nivel - 1].value == 1:
+            valor = row[col_bdi - 1].value
+            if isinstance(valor, (int, float)):
+                total += valor
+                encontrou_total = True
+
         qtd_cell = row[col_qtd - 1] if col_qtd else None
         qtd = qtd_cell.value if qtd_cell else None
         if not isinstance(qtd, (int, float)) or qtd <= 0:
@@ -102,45 +118,23 @@ def ler_itens_orcamento(caminho_arquivo: str) -> list:
                 "observacao_rfp": str(obs).strip() if obs else "",
             }
         )
-    return itens
 
-
-def ler_valor_total_bdi(caminho_arquivo: str):
-    """Retorna o valor total do orcamento (com BDI), somando as linhas de
-    Nivel 1 (categorias-raiz) da aba orcamentaria."""
-    wb = openpyxl.load_workbook(caminho_arquivo, data_only=True)
-    nome_aba = _achar_aba_orcamentaria(wb)
-    if not nome_aba:
-        return None
-    ws = wb[nome_aba]
-
-    headers = [c.value for c in ws[1]]
-    col = {h: idx + 1 for idx, h in enumerate(headers) if h}
-    col_nivel = col.get("Nível") or col.get("Nivel")
-    col_bdi = col.get("Valor total + BDI")
-    if not col_nivel or not col_bdi:
-        return None
-
-    total = 0.0
-    encontrou = False
-    for row in ws.iter_rows(min_row=2):
-        nivel = row[col_nivel - 1].value
-        if nivel == 1:
-            valor = row[col_bdi - 1].value
-            if isinstance(valor, (int, float)):
-                total += valor
-                encontrou = True
-    return total if encontrou else None
+    return itens, (total if encontrou_total else None)
 
 
 def carregar_lpu(caminho_arquivo: str, nome_arquivo: str) -> dict:
-    dados_capa = ler_dados_capa(caminho_arquivo)
-    itens = ler_itens_orcamento(caminho_arquivo)
-    disciplina = detectar_disciplina(nome_arquivo)
-    valor_total_bdi = ler_valor_total_bdi(caminho_arquivo)
+    wb = openpyxl.load_workbook(caminho_arquivo, read_only=True, data_only=True)
+    try:
+        dados_capa = _ler_dados_capa(wb)
+        itens, valor_total_bdi = _ler_orcamento(wb)
+    finally:
+        # read_only mantem o arquivo .xlsx aberto pra ler sob demanda --
+        # sem fechar aqui, o os.unlink do temp file (em app.py, logo apos
+        # chamar isso) falha no Windows ("em uso por outro processo").
+        wb.close()
     return {
         **dados_capa,
-        "disciplina": disciplina,
+        "disciplina": detectar_disciplina(nome_arquivo),
         "itens": itens,
         "valor_total_bdi": valor_total_bdi,
     }

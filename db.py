@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timezone
 
 import streamlit as st
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 
 from counter import montar_codigo, montar_codigo_revisao
 
@@ -326,6 +326,23 @@ def listar_propostas(limite: int = 100):
             {"lim": limite},
         ).fetchall()
         return rows
+
+
+def contar_revisoes(numeros: list) -> dict:
+    """{numero_pai: quantidade de revisoes} para os numeros dados, numa
+    unica query (em vez de uma consulta "listar_revisoes" por proposta --
+    o Historico ficava lento com muitas propostas por causa disso)."""
+    numeros = [n for n in numeros if n is not None]
+    if not numeros:
+        return {}
+    engine = _get_engine()
+    stmt = text(
+        "SELECT numero_pai, COUNT(*) FROM revisoes WHERE numero_pai IN :nums "
+        "GROUP BY numero_pai"
+    ).bindparams(bindparam("nums", expanding=True))
+    with engine.connect() as conn:
+        rows = conn.execute(stmt, {"nums": numeros}).fetchall()
+        return {r[0]: r[1] for r in rows}
 
 
 def obter_proposta_completa(numero: int):

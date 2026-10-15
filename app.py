@@ -28,6 +28,22 @@ TEMPLATE_PATH = os.path.join(BASE_DIR, "templates", "template_proposta.docx")
 TEMPLATE_TECNICA_PATH = os.path.join(BASE_DIR, "templates", "template_tecnica.docx")
 TEMPLATE_COMERCIAL_PATH = os.path.join(BASE_DIR, "templates", "template_comercial.docx")
 
+
+@st.cache_data(show_spinner=False)
+def _carregar_lpu_cached(lpu_bytes: bytes, nome_arquivo: str) -> dict:
+    """carregar_lpu cacheado pelos bytes do arquivo: o Streamlit reroda o
+    script inteiro a cada interacao (digitar um campo, marcar um item...),
+    e sem isso a MESMA planilha era reaberta e reprocessada do zero toda
+    vez -- o cache faz isso rodar uma vez so por arquivo."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(lpu_bytes)
+        tmp_path = tmp.name
+    try:
+        return carregar_lpu(tmp_path, nome_arquivo)
+    finally:
+        os.unlink(tmp_path)
+
+
 st.set_page_config(page_title="Gerador de Propostas - Novetel", layout="wide")
 
 
@@ -170,9 +186,11 @@ historico = db.listar_propostas()
 with st.expander("Histórico de propostas geradas"):
     # Consulta leve (sem buscar os arquivos/blobs de cada proposta) para o
     # app continuar rapido pra abrir mesmo com muitas propostas geradas.
-    # "Revisões" so conta quantas existem (consulta leve, sem arquivos) --
-    # os arquivos em si so sao buscados na secao "Baixar proposta anterior".
+    # "Revisões" vem de uma unica query pra todas (contar_revisoes) -- com
+    # muitas propostas, uma consulta por linha deixava isso (e o app
+    # inteiro, ja que o expander roda a cada interacao) bem lento.
     if historico:
+        contagem_revisoes = db.contar_revisoes([h.numero for h in historico])
         st.dataframe(
             [
                 {
@@ -184,7 +202,7 @@ with st.expander("Histórico de propostas geradas"):
                     "Data": h.data_proposta,
                     "Valor (R$)": h.valor_total,
                     "Criado em": h.criado_em,
-                    "Revisões": len(db.listar_revisoes(h.numero)),
+                    "Revisões": contagem_revisoes.get(h.numero, 0),
                 }
                 for h in historico
             ],
@@ -232,11 +250,7 @@ if historico:
             col_c.caption("Proposta (.pdf) nao disponivel.")
 
         if lpu_arq and st.checkbox("Visualizar itens da LPU", key=f"ver_lpu_{numero_sel}"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_hist:
-                tmp_hist.write(lpu_arq[1])
-                tmp_hist_path = tmp_hist.name
-            dados_lpu_hist = carregar_lpu(tmp_hist_path, lpu_arq[0])
-            os.unlink(tmp_hist_path)
+            dados_lpu_hist = _carregar_lpu_cached(lpu_arq[1], lpu_arq[0])
 
             col_h1, col_h2, col_h3 = st.columns(3)
             col_h1.metric("Codigo do projeto", dados_lpu_hist["codigo_projeto"] or "-")
@@ -305,11 +319,7 @@ dados_lpu = None
 lpu_bytes = None
 if lpu_file is not None:
     lpu_bytes = lpu_file.getvalue()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        tmp.write(lpu_bytes)
-        tmp_path = tmp.name
-    dados_lpu = carregar_lpu(tmp_path, lpu_file.name)
-    os.unlink(tmp_path)
+    dados_lpu = _carregar_lpu_cached(lpu_bytes, lpu_file.name)
 
     # Sempre que uma LPU NOVA (ou diferente) e carregada, atualiza os campos
     # dependentes dela. Sem isso, os widgets "travam" no primeiro valor
@@ -462,11 +472,7 @@ with st.expander("Revisar uma proposta existente (opcional)"):
 
         if lpu_antiga:
             try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_old:
-                    tmp_old.write(lpu_antiga[1])
-                    tmp_old_path = tmp_old.name
-                dados_lpu_antiga = carregar_lpu(tmp_old_path, lpu_antiga[0])
-                os.unlink(tmp_old_path)
+                dados_lpu_antiga = _carregar_lpu_cached(lpu_antiga[1], lpu_antiga[0])
                 itens_antigos_revisao = dados_lpu_antiga["itens"]
                 st.caption(
                     f"LPU anterior ({lpu_antiga[0]}): {len(itens_antigos_revisao)} itens — "
